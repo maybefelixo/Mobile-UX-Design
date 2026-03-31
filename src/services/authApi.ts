@@ -18,14 +18,17 @@ async function callApi(params: Record<string, string>): Promise<ApiResult> {
       return { ok: false, error: `HTTP ${response.status}` };
     }
 
-    const text = (await response.text()).trim();
+  const json = await response.json();
 
-    // Doku wirkt textbasiert (token / ok / error)
-    if (!text || text.toLowerCase().includes("error")) {
-      return { ok: false, error: text || "Unbekannter API-Fehler" };
-    }
+  if (json.status !== "ok") {
+    return { ok: false, error: json.message || "API-Fehler" };
+  }
+  
+  return {
+    ok: true,
+    data: json.token || json.message || "ok",
+  };
 
-    return { ok: true, data: text };
   } catch {
     return { ok: false, error: "Netzwerkfehler" };
   }
