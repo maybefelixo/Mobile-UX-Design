@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { loginUser, deregisterUser } from "../services/authApi";
 
 export default function Login() {
+  const navigate = useNavigate();
   const [userid, setUserid] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -35,7 +36,8 @@ export default function Login() {
 
     localStorage.setItem("token", result.data);
     localStorage.setItem("userid", userid.trim());
-    setSuccess("Login erfolgreich. Token wurde gespeichert.");
+    setSuccess("Login erfolgreich. Weiterleitung ...");
+    setTimeout(() => navigate("/chat"), 200);
   }
 
   async function handleDeregister() {

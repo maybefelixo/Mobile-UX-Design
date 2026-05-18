@@ -1,65 +1,53 @@
-const API_BASE = "https://www2.hs-esslingen.de/~nitzsche/api/";
-
-type ApiResult = {
-  ok: boolean;
-  data?: string;
-  error?: string;
-};
-
-async function callApi(params: Record<string, string>): Promise<ApiResult> {
-  try {
-    const url = new URL(API_BASE);
-    Object.entries(params).forEach(([key, value]) => {
-      url.searchParams.set(key, value);
-    });
-
-    const response = await fetch(url.toString(), { method: "GET" });
-    if (!response.ok) {
-      return { ok: false, error: `HTTP ${response.status}` };
-    }
-
-  const json = await response.json();
-
-  if (json.status !== "ok") {
-    return { ok: false, error: json.message || "API-Fehler" };
-  }
-  
-  return {
-    ok: true,
-    data: json.token || json.message || "ok",
-  };
-
-  } catch {
-    return { ok: false, error: "Netzwerkfehler" };
-  }
-}
+import { getApi, type ApiResult } from "./apiClient";
 
 export async function registerUser(input: {
   userid: string;
   password: string;
   nickname: string;
   fullname: string;
-}) {
-  return callApi({
-    request: "register",
-    userid: input.userid,
-    password: input.password,
-    nickname: input.nickname,
-    fullname: input.fullname,
-  });
+}): Promise<ApiResult<string>> {
+  return getApi(
+    {
+      request: "register",
+      userid: input.userid,
+      password: input.password,
+      nickname: input.nickname,
+      fullname: input.fullname,
+    },
+    (json) => json.token || json.message || "ok",
+  );
 }
 
-export async function loginUser(input: { userid: string; password: string }) {
-  return callApi({
-    request: "login",
-    userid: input.userid,
-    password: input.password,
-  });
+export async function loginUser(input: {
+  userid: string;
+  password: string;
+}): Promise<ApiResult<string>> {
+  return getApi(
+    {
+      request: "login",
+      userid: input.userid,
+      password: input.password,
+    },
+    (json) => json.token || json.message || "ok",
+  );
 }
 
-export async function deregisterUser(token: string) {
-  return callApi({
-    request: "deregister",
-    token,
-  });
+export async function deregisterUser(token: string): Promise<ApiResult<string>> {
+  return getApi(
+    {
+      request: "deregister",
+      token,
+    },
+    (json) => json.message || "Account wurde gelöscht.",
+  );
+}
+
+export async function validateToken(token: string): Promise<ApiResult<string>> {
+  return getApi(
+    {
+      request: "validatetoken",
+      token,
+    },
+    (json) => json.message || "Token validiert.",
+  );
 }

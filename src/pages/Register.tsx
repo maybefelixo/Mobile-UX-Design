@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { registerUser } from "../services/authApi";
 
 export default function Register() {
+  const navigate = useNavigate();
   const [userid, setUserid] = useState("");
   const [nickname, setNickname] = useState("");
   const [fullname, setFullname] = useState("");
@@ -39,7 +40,8 @@ export default function Register() {
 
     localStorage.setItem("token", result.data);
     localStorage.setItem("userid", userid.trim());
-    setSuccess("Registrierung erfolgreich. Token wurde gespeichert.");
+    setSuccess("Registrierung erfolgreich. Weiterleitung ...");
+    setTimeout(() => navigate("/chat"), 200);
   }
 
   return (
