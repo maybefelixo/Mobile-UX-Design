@@ -51,3 +51,10 @@ export async function validateToken(token: string): Promise<ApiResult<string>> {
     (json) => json.message || "Token validiert.",
   );
 }
+
+export async function logoutUser(token: string): Promise<ApiResult<string>> {
+  return getApi(
+    { request: "logout", token },
+    (json) => json.message || "Abgemeldet.",
+  );
+}

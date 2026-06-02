@@ -11,6 +11,7 @@ type ApiEnvelope = {
   chats?: unknown;
   messages?: unknown;
   profiles?: unknown;
+  invites?: unknown;
   chatid?: number;
 };
 
@@ -45,6 +46,27 @@ export async function getApi<T>(
     }
 
     return { ok: true, data: mapSuccess(json) };
+  } catch {
+    return { ok: false, error: "Netzwerkfehler" };
+  }
+}
+
+export async function getBinaryApi(
+  params: Record<string, string>,
+): Promise<ApiResult<string>> {
+  try {
+    const url = new URL(API_BASE);
+    Object.entries(params).forEach(([key, value]) => {
+      url.searchParams.set(key, value);
+    });
+
+    const response = await fetch(url.toString(), { method: "GET" });
+    if (!response.ok) {
+      return { ok: false, error: `HTTP ${response.status}` };
+    }
+
+    const blob = await response.blob();
+    return { ok: true, data: URL.createObjectURL(blob) };
   } catch {
     return { ok: false, error: "Netzwerkfehler" };
   }
