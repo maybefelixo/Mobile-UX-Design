@@ -33,13 +33,16 @@ export default function Register() {
 
     setLoading(false);
 
-    if (!result.ok || !result.data) {
+    if (!result.ok || !result.data?.token) {
       setError(result.error || "Registrierung fehlgeschlagen.");
       return;
     }
 
-    localStorage.setItem("token", result.data);
+    localStorage.setItem("token", result.data.token);
+    localStorage.setItem("hash", result.data.hash);
     localStorage.setItem("userid", userid.trim());
+    localStorage.setItem("nickname", nickname.trim());
+    localStorage.setItem("fullname", fullname.trim());
     setSuccess("Registrierung erfolgreich. Weiterleitung ...");
     setTimeout(() => navigate("/chat"), 200);
   }

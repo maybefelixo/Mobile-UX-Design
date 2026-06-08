@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { loginUser, deregisterUser } from "../services/authApi";
+import { loginUser } from "../services/authApi";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -29,40 +29,18 @@ export default function Login() {
 
     setLoading(false);
 
-    if (!result.ok || !result.data) {
+    if (!result.ok || !result.data?.token) {
       setError(result.error || "Login fehlgeschlagen.");
       return;
     }
 
-    localStorage.setItem("token", result.data);
+    localStorage.setItem("token", result.data.token);
+    localStorage.setItem("hash", result.data.hash);
     localStorage.setItem("userid", userid.trim());
     setSuccess("Login erfolgreich. Weiterleitung ...");
     setTimeout(() => navigate("/chat"), 200);
   }
 
-  async function handleDeregister() {
-    setError("");
-    setSuccess("");
-
-    const token = localStorage.getItem("token");
-    if (!token) {
-      setError("Kein Token gefunden. Bitte zuerst einloggen.");
-      return;
-    }
-
-    setLoading(true);
-    const result = await deregisterUser(token);
-    setLoading(false);
-
-    if (!result.ok) {
-      setError(result.error || "Deregistrieren fehlgeschlagen.");
-      return;
-    }
-
-    localStorage.removeItem("token");
-    localStorage.removeItem("userid");
-    setSuccess("Account wurde deregistriert und Token entfernt.");
-  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-blue-50">
@@ -112,14 +90,7 @@ export default function Login() {
             {loading ? "Lade..." : "Login"}
           </button>
 
-          <button
-            type="button"
-            onClick={handleDeregister}
-            disabled={loading}
-            className="mb-2 w-full rounded-md border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-600 disabled:opacity-60"
-          >
-            Account deregistrieren
-          </button>
+
         </form>
 
         <p className="mt-4 text-center text-sm text-gray-600">

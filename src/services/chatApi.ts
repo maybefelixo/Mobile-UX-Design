@@ -16,6 +16,8 @@ export type ChatMessage = {
   text?: string;
   important?: boolean;
   usernick?: string;
+  photoid?: string;
+  _status?: "sending" | "error";
 };
 
 export type UserProfile = {
@@ -99,6 +101,7 @@ function normalizeMessages(raw: unknown): ChatMessage[] {
         text: data.text ? String(data.text) : "",
         important: Boolean(data.important ?? false),
         usernick: data.usernick ? String(data.usernick) : undefined,
+        photoid: data.photoid ? String(data.photoid) : undefined,
       };
     });
 

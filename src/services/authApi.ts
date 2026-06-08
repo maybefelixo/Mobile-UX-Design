@@ -5,7 +5,7 @@ export async function registerUser(input: {
   password: string;
   nickname: string;
   fullname: string;
-}): Promise<ApiResult<string>> {
+}): Promise<ApiResult<{ token: string; hash: string }>> {
   return getApi(
     {
       request: "register",
@@ -14,21 +14,21 @@ export async function registerUser(input: {
       nickname: input.nickname,
       fullname: input.fullname,
     },
-    (json) => json.token || json.message || "ok",
+    (json) => ({ token: String(json.token || ""), hash: String(json.hash || "") }),
   );
 }
 
 export async function loginUser(input: {
   userid: string;
   password: string;
-}): Promise<ApiResult<string>> {
+}): Promise<ApiResult<{ token: string; hash: string }>> {
   return getApi(
     {
       request: "login",
       userid: input.userid,
       password: input.password,
     },
-    (json) => json.token || json.message || "ok",
+    (json) => ({ token: String(json.token || ""), hash: String(json.hash || "") }),
   );
 }
 
@@ -58,3 +58,4 @@ export async function logoutUser(token: string): Promise<ApiResult<string>> {
     (json) => json.message || "Abgemeldet.",
   );
 }
+
