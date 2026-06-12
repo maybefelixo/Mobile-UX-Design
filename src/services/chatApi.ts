@@ -14,9 +14,12 @@ export type ChatMessage = {
   time?: string;
   chatid?: number;
   text?: string;
+  position?: string;
+  replyTo?: number;
   important?: boolean;
   usernick?: string;
   photoid?: string;
+  localPreview?: string;
   _status?: "sending" | "error";
 };
 
@@ -99,6 +102,8 @@ function normalizeMessages(raw: unknown): ChatMessage[] {
         time: data.time ? String(data.time) : undefined,
         chatid: data.chatid ? Number(data.chatid) : undefined,
         text: data.text ? String(data.text) : "",
+        position: data.position ? String(data.position) : undefined,
+        replyTo: data.replyto ? Number(data.replyto) : undefined,
         important: Boolean(data.important ?? false),
         usernick: data.usernick ? String(data.usernick) : undefined,
         photoid: data.photoid ? String(data.photoid) : undefined,
@@ -227,5 +232,12 @@ export async function leaveChat(token: string, chatid: number): Promise<ApiResul
   return getApi(
     { request: "leavechat", token, chatid: String(chatid) },
     (json) => json.message || "Chat verlassen.",
+  );
+}
+
+export async function deleteMessage(token: string, messageid: number): Promise<ApiResult<string>> {
+  return getApi(
+    { request: "deletemessage", token, messageid: String(messageid) },
+    (json) => json.message || "Nachricht gelöscht.",
   );
 }

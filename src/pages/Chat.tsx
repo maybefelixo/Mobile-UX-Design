@@ -4,10 +4,12 @@ import {
   getChats,
   getMessages,
   getPhoto,
-  postTextMessage,
+  postMessage,
+  deleteMessage,
   type ChatMessage,
   type ChatSummary,
 } from "../services/chatApi";
+import { validateToken } from "../services/authApi";
 import BottomNav from "../components/BottomNav";
 
 type FilterType = "all" | "groups" | "unread";
@@ -64,6 +66,60 @@ function formatMsgTime(time?: string): string {
   const date = parseDate(time);
   if (!date) return "";
   return date.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatPosition(position?: string): string {
+  if (!position) return "";
+  const compact = position.trim();
+  if (!compact) return "";
+  return compact.replace(/^lat\s*[:=]\s*/i, "").replace(/\s+lon\s*[:=]\s*/i, ", ");
+}
+
+function createImageUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Bild konnte nicht gelesen werden."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function stripDataUrlPrefix(dataUrl: string): string {
+  return dataUrl.replace(/^data:image\/png;base64,/, "");
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Bild konnte nicht verarbeitet werden."));
+    image.src = src;
+  });
+}
+
+async function toPngDataUrl(file: File): Promise<string> {
+  const dataUrl = await createImageUrl(file);
+  if (file.type === "image/png" || dataUrl.startsWith("data:image/png")) {
+    return dataUrl;
+  }
+
+  const image = await loadImage(dataUrl);
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth || image.width;
+  canvas.height = image.naturalHeight || image.height;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Bild kann nicht umgewandelt werden.");
+  }
+
+  const maxSize = 640;
+  const scale = Math.min(1, maxSize / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+  canvas.width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+  canvas.height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/png");
 }
 
 function formatDateSeparator(time?: string): string {
@@ -229,16 +285,26 @@ function MessageStatus({ status }: { status?: "sending" | "error" }) {
   );
 }
 
-function PhotoMessage({ token, photoid }: { token: string; photoid: string }) {
-  const [src, setSrc] = useState<string | null>(null);
+function PhotoMessage({ token, photoid, localPreview }: { token: string; photoid?: string; localPreview?: string }) {
+  const [src, setSrc] = useState<string | null>(localPreview || null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
+    if (localPreview) {
+      setSrc(localPreview);
+      setFailed(false);
+      return;
+    }
+
+    if (!photoid) return;
+
+    setSrc(null);
+    setFailed(false);
     getPhoto(token, photoid).then((result) => {
       if (result.ok && result.data) setSrc(result.data);
       else setFailed(true);
     });
-  }, [token, photoid]);
+  }, [token, photoid, localPreview]);
 
   if (failed) return <p className="text-xs opacity-60">Bild nicht verfügbar</p>;
   if (!src) return <div className="h-32 w-48 animate-pulse rounded-xl bg-black/10" />;
@@ -251,8 +317,30 @@ function PhotoMessage({ token, photoid }: { token: string; photoid: string }) {
   );
 }
 
+function LocationMessage({ position }: { position: string }) {
+  const label = formatPosition(position);
+  const mapsLink = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(label)}`;
+
+  return (
+    <a
+      href={mapsLink}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-emerald-700"
+    >
+      <svg className="h-4 w-4 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z" />
+      </svg>
+      <span className="break-all text-left">{label}</span>
+    </a>
+  );
+}
+
 function ChatDetailView({
-  token, chat, messages, loading, error, onBack, onSendMessage, sending,
+  token, chat, messages, loading, error, onBack, onSendMessage, onSendPhoto, onSendLocation, onSendError, sending,
+  onSetReplyTarget,
+  replyTarget,
+  onDeleteMessage,
 }: {
   token: string;
   chat: ChatSummary | null;
@@ -261,10 +349,17 @@ function ChatDetailView({
   error: string;
   onBack: () => void;
   onSendMessage: (text: string) => Promise<void>;
+  onSendPhoto: (photo: string) => Promise<void>;
+  onSendLocation: (position: string) => Promise<void>;
+  onSendError: (message: string) => void;
   sending: boolean;
+  onSetReplyTarget: (msg: ChatMessage | null) => void;
+  replyTarget?: ChatMessage | null;
+  onDeleteMessage?: (msg: ChatMessage) => void;
 }) {
   const [messageText, setMessageText] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const myUserid = useMemo(() => localStorage.getItem("userid") || "", []);
 
   useEffect(() => {
@@ -276,6 +371,91 @@ function ChatDetailView({
     if (!messageText.trim()) return;
     await onSendMessage(messageText);
     setMessageText("");
+    onSetReplyTarget?.(null);
+  }
+
+  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.currentTarget.files?.[0];
+    e.currentTarget.value = "";
+
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      onSendError("Bitte nur Bilder auswählen.");
+      return;
+    }
+
+    try {
+      const photo = await toPngDataUrl(file);
+      await onSendPhoto(photo);
+    } catch {
+      onSendError("Bild konnte nicht gesendet werden.");
+    }
+  }
+
+  function handleLocationClick() {
+    if (!window.isSecureContext) {
+      onSendError("Standort funktioniert nur in einem sicheren Kontext (HTTPS oder localhost).");
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      onSendError("Standort ist in diesem Browser nicht verfügbar.");
+      return;
+    }
+
+    if (navigator.permissions?.query) {
+      void navigator.permissions
+        .query({ name: "geolocation" as PermissionName })
+        .then((permission) => {
+          if (permission.state === "denied") {
+            onSendError("Standortzugriff ist im Browser blockiert. Bitte in den Seiteneinstellungen erlauben und erneut versuchen.");
+            return;
+          }
+
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              const payload = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
+              void onSendLocation(payload);
+            },
+            (error) => {
+              if (error.code === error.PERMISSION_DENIED) {
+                onSendError("Standortzugriff wurde abgelehnt. Bitte im Browser erlauben.");
+                return;
+              }
+              if (error.code === error.POSITION_UNAVAILABLE) {
+                onSendError("Standort ist aktuell nicht verfügbar. Bitte GPS/WLAN prüfen.");
+                return;
+              }
+              if (error.code === error.TIMEOUT) {
+                onSendError("Standortabfrage hat zu lange gedauert. Bitte erneut versuchen.");
+                return;
+              }
+              onSendError("Standort konnte nicht ermittelt werden.");
+            },
+            { enableHighAccuracy: true, timeout: 10000 },
+          );
+        })
+        .catch(() => {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              const payload = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
+              void onSendLocation(payload);
+            },
+            () => onSendError("Standort konnte nicht abgerufen werden. Bitte Berechtigung prüfen."),
+            { enableHighAccuracy: true, timeout: 10000 },
+          );
+        });
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const payload = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
+        void onSendLocation(payload);
+      },
+      () => onSendError("Standort konnte nicht abgerufen werden. Bitte Berechtigung prüfen."),
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
   }
 
   const chatName = chat?.chatname || "Chat";
@@ -354,18 +534,51 @@ function ChatDetailView({
                     ) : null}
 
                     <div className={[
-                      msg.photoid ? "" : "rounded-2xl px-4 py-2.5 text-sm shadow-sm",
-                      !msg.photoid && isOwn ? "rounded-br-sm bg-blue-600 text-white" : "",
-                      !msg.photoid && !isOwn ? "rounded-bl-sm bg-white text-slate-800" : "",
+                      msg.photoid || msg.localPreview || msg.position ? "" : "rounded-2xl px-4 py-2.5 text-sm shadow-sm",
+                      !msg.photoid && !msg.localPreview && !msg.position && isOwn ? "rounded-br-sm bg-blue-600 text-white" : "",
+                      !msg.photoid && !msg.localPreview && !msg.position && !isOwn ? "rounded-bl-sm bg-white text-slate-800" : "",
                     ].join(" ")}>
-                      {msg.photoid
-                        ? <PhotoMessage token={token} photoid={msg.photoid} />
-                        : (msg.text || "(kein Text)")}
+                      {/* Render quoted reply if present */}
+                      {msg.replyTo ? (() => {
+                        const replied = messages.find((m) => m.id === msg.replyTo);
+                        if (!replied) return null;
+                        return (
+                          <div className="mb-2 rounded-l border-l-2 border-slate-200 bg-slate-50 p-2 text-xs text-slate-600">
+                            <div className="font-medium text-slate-700">{replied.usernick || replied.userid || "?"}</div>
+                            <div className="truncate">{replied.text ? replied.text : (replied.photoid || replied.localPreview ? "Bild" : "(kein Text)")}</div>
+                          </div>
+                        );
+                      })() : null}
+
+                      {msg.photoid || msg.localPreview ? (
+                        <PhotoMessage token={token} photoid={msg.photoid} localPreview={msg.localPreview} />
+                      ) : msg.position ? (
+                        <LocationMessage position={msg.position} />
+                      ) : (
+                        msg.text || "(kein Text)"
+                      )}
                     </div>
 
                     <div className={["mt-1 flex items-center gap-1 text-xs text-slate-400", isOwn ? "justify-end" : "ml-1"].join(" ")}>
                       <span>{formatMsgTime(msg.time)}</span>
                       {isOwn && <MessageStatus status={msg._status} />}
+                      {/* Reply action */}
+                      <button type="button" onClick={() => onSetReplyTarget?.(msg)} className="ml-2 text-slate-400 hover:text-slate-600">
+                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M10 19l-7-7 7-7" />
+                          <path d="M3 12h11a4 4 0 0 1 4 4v6" />
+                        </svg>
+                      </button>
+                      {isOwn ? (
+                        <button type="button" onClick={() => onDeleteMessage?.(msg)} className="ml-2 text-red-400 hover:text-red-600">
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                            <path d="M10 11v6" />
+                            <path d="M14 11v6" />
+                          </svg>
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -378,18 +591,56 @@ function ChatDetailView({
 
       {error ? <p className="px-4 py-1 text-xs text-red-500">{error}</p> : null}
 
+      {/* Reply preview above composer */}
+      {replyTarget ? (
+        <div className="px-3 pb-2">
+          <div className="flex items-center justify-between rounded-md bg-slate-50 p-2 text-sm">
+            <div className="min-w-0">
+              <div className="text-xs font-medium text-slate-700">Antwort an {replyTarget.usernick || replyTarget.userid || "?"}</div>
+              <div className="truncate text-xs text-slate-500">{replyTarget.text ? replyTarget.text : (replyTarget.photoid || replyTarget.localPreview ? "Bild" : "(kein Text)")}</div>
+            </div>
+            <button type="button" onClick={() => onSetReplyTarget?.(null)} className="ml-3 text-slate-400 hover:text-slate-600">✕</button>
+          </div>
+        </div>
+      ) : null}
+
       {/* Input */}
       <form onSubmit={handleSubmit} className="flex items-center gap-2 bg-white px-3 py-3 shadow-lg">
-        <button type="button" className="flex-shrink-0 text-slate-400 hover:text-slate-600">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={handlePhotoChange}
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={sending}
+          className="flex-shrink-0 text-slate-400 hover:text-slate-600 disabled:opacity-50"
+          aria-label="Bild anhängen"
+        >
           <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={handleLocationClick}
+          disabled={sending}
+          className="flex-shrink-0 text-slate-400 hover:text-slate-600 disabled:opacity-50"
+          aria-label="Standort senden"
+        >
+          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 21s6-4.35 6-10a6 6 0 10-12 0c0 5.65 6 10 6 10zm0-7a3 3 0 110-6 3 3 0 010 6z" />
           </svg>
         </button>
         <input
           type="text"
           value={messageText}
           onChange={(e) => setMessageText(e.target.value)}
-          placeholder="Send a message"
+          placeholder="Nachricht schreiben"
           className="flex-1 rounded-full bg-slate-100 px-4 py-2.5 text-sm outline-none placeholder:text-slate-400"
         />
         <button
@@ -413,6 +664,7 @@ export default function Chat() {
   const [loadingChats, setLoadingChats] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
+  const [replyToMessage, setReplyToMessage] = useState<ChatMessage | null>(null);
 
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [selectedChat, setSelectedChat] = useState<ChatSummary | null>(null);
@@ -448,15 +700,33 @@ export default function Chat() {
     void loadMessages();
   }, [selectedChat, token]);
 
-  async function handleSendMessage(text: string) {
+  async function sendChatPayload(input: { text?: string; photo?: string; position?: string; localPreview?: string }) {
     if (!token || !selectedChat) return;
+
+    // Validate token before attempting to send to avoid server-side 456
+    try {
+      const vt = await validateToken(token);
+      if (!vt.ok) {
+        // token invalid → clear and redirect to login
+        localStorage.removeItem("token");
+        localStorage.removeItem("hash");
+        setError("Session ungültig. Bitte erneut anmelden.");
+        navigate("/");
+        return;
+      }
+    } catch {
+      // validation failed (network) — continue and let postMessage handle errors
+    }
 
     const tempId = Date.now();
     const optimistic: ChatMessage = {
       id: tempId,
       userid: localStorage.getItem("userid") || "",
       usernick: localStorage.getItem("nickname") || undefined,
-      text,
+      text: input.text,
+      position: input.position,
+      replyTo: replyToMessage?.id,
+      localPreview: input.localPreview,
       time: new Date().toISOString(),
       chatid: selectedChat.chatid,
       _status: "sending",
@@ -465,17 +735,52 @@ export default function Chat() {
 
     setSending(true);
     setError("");
-    const result = await postTextMessage({ token, text, chatid: selectedChat.chatid });
+    const result = await postMessage({
+      token,
+      chatid: selectedChat.chatid,
+      text: input.text,
+      photo: input.photo,
+      position: input.position,
+    });
     setSending(false);
 
     if (!result.ok) {
       setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, _status: "error" as const } : m));
       setError(result.error || "Nachricht konnte nicht gesendet werden.");
+      // keep reply target so user can retry
       return;
     }
 
     const refreshed = await getMessages(token, selectedChat.chatid);
     if (refreshed.ok && refreshed.data) setMessages(refreshed.data);
+    setReplyToMessage(null);
+  }
+
+  async function handleDeleteMessage(msg: ChatMessage) {
+    if (!msg.id || !token) return;
+    if (!confirm("Nachricht wirklich löschen?")) return;
+
+    // optimistic remove
+    const old = messages;
+    setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+
+    const res = await deleteMessage(token, msg.id);
+    if (!res.ok) {
+      setMessages(old);
+      setError(res.error || "Löschen fehlgeschlagen.");
+    }
+  }
+
+  async function handleSendMessage(text: string) {
+    await sendChatPayload({ text });
+  }
+
+  async function handleSendPhoto(photo: string) {
+    await sendChatPayload({ photo: stripDataUrlPrefix(photo), localPreview: photo });
+  }
+
+  async function handleSendLocation(position: string) {
+    await sendChatPayload({ position });
   }
 
   return (
@@ -504,7 +809,13 @@ export default function Chat() {
           error={error}
           onBack={() => setViewMode("list")}
           onSendMessage={handleSendMessage}
+          onSendPhoto={handleSendPhoto}
+          onSendLocation={handleSendLocation}
+          onSendError={setError}
           sending={sending}
+          onSetReplyTarget={setReplyToMessage}
+          replyTarget={replyToMessage}
+          onDeleteMessage={handleDeleteMessage}
         />
       </div>
     </div>
