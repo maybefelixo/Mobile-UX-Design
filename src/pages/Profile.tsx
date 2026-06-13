@@ -1,19 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { createChat, getProfiles, inviteUser, type UserProfile } from "../services/chatApi";
+import { createChat, getChats, getProfiles, inviteUser, joinChat, type ChatSummary, type UserProfile } from "../services/chatApi";
 import BottomNav from "../components/BottomNav";
-
-const AVATAR_COLORS = [
-  "bg-rose-500", "bg-pink-500", "bg-fuchsia-500", "bg-purple-500",
-  "bg-indigo-500", "bg-blue-500", "bg-cyan-500", "bg-teal-500",
-  "bg-emerald-500", "bg-green-500", "bg-amber-500", "bg-orange-500",
-];
-
-function avatarColor(name: string): string {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
-  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
-}
+import { avatarColor } from "../utils/avatarUtils";
 
 function ContactAvatar({ name }: { name: string }) {
   return (
@@ -34,7 +23,7 @@ function EmptyState({ text = "Keine Kontakte gefunden." }: { text?: string }) {
   );
 }
 
-type Tab = "dm" | "group";
+type Tab = "dm" | "group" | "discover";
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -50,16 +39,25 @@ export default function Profile() {
 
   // Group flow
   const [groupName, setGroupName] = useState("");
+  const [isPublic, setIsPublic] = useState(false);
   const [selectedHashes, setSelectedHashes] = useState<Set<string>>(new Set());
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [groupError, setGroupError] = useState("");
 
+  // Discover flow
+  const [publicChats, setPublicChats] = useState<ChatSummary[]>([]);
+  const [joiningId, setJoiningId] = useState<number | null>(null);
+  const [joinError, setJoinError] = useState("");
+
   useEffect(() => {
     if (!token) { navigate("/"); return; }
     setLoadingProfiles(true);
-    getProfiles(token).then((result) => {
+    Promise.all([getProfiles(token), getChats(token)]).then(([profilesResult, chatsResult]) => {
       setLoadingProfiles(false);
-      if (result.ok && result.data) setProfiles(result.data);
+      if (profilesResult.ok && profilesResult.data) setProfiles(profilesResult.data);
+      if (chatsResult.ok && chatsResult.data) {
+        setPublicChats(chatsResult.data.filter((c) => c.visibility === "public"));
+      }
     });
   }, [token, navigate]);
 
@@ -79,9 +77,12 @@ export default function Profile() {
     const result = await createChat({ token, chatname: profile.nickname });
     if (result.ok && result.data) {
       await inviteUser(token, result.data, profile.hash);
+      setCreatingDm(null);
+      navigate("/chat", { state: { openChatId: result.data } });
+    } else {
+      setCreatingDm(null);
+      navigate("/chat");
     }
-    setCreatingDm(null);
-    navigate("/chat");
   }
 
   // --- Group flow ---
@@ -97,7 +98,7 @@ export default function Profile() {
     if (!groupName.trim() || selectedHashes.size === 0) return;
     setCreatingGroup(true);
     setGroupError("");
-    const result = await createChat({ token, chatname: groupName.trim() });
+    const result = await createChat({ token, chatname: groupName.trim(), ispublic: isPublic });
     if (!result.ok || !result.data) {
       setGroupError(result.error || "Fehler beim Erstellen.");
       setCreatingGroup(false);
@@ -109,13 +110,29 @@ export default function Profile() {
     );
     setCreatingGroup(false);
     setGroupName("");
+    setIsPublic(false);
     setSelectedHashes(new Set());
-    navigate("/chat");
+    navigate("/chat", { state: { openChatId: chatid } });
+  }
+
+  async function handleJoin(chatid: number) {
+    setJoiningId(chatid);
+    setJoinError("");
+    const result = await joinChat(token, chatid);
+    if (!result.ok) {
+      setJoinError(result.error || "Beitreten fehlgeschlagen.");
+      setJoiningId(null);
+      return;
+    }
+    // Mark as joined locally
+    setPublicChats((prev) => prev.map((c) => c.chatid === chatid ? { ...c, joined: true } : c));
+    setJoiningId(null);
   }
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "dm", label: "Neue Nachricht" },
     { key: "group", label: "Neue Gruppe" },
+    { key: "discover", label: "Gruppen" },
   ];
 
   return (
@@ -213,8 +230,8 @@ export default function Profile() {
           /* ── Neue Gruppe ─────────────────────────────────────── */
           <div className="flex flex-col gap-4 p-4">
 
-            {/* Group name */}
-            <div className="rounded-2xl bg-white shadow-sm">
+            {/* Group name + visibility */}
+            <div className="rounded-2xl bg-white shadow-sm divide-y divide-slate-100">
               <div className="px-4 py-3">
                 <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-400">
                   Gruppenname
@@ -227,6 +244,32 @@ export default function Profile() {
                   className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
                 />
               </div>
+              <button
+                type="button"
+                onClick={() => setIsPublic((v) => !v)}
+                className="flex w-full items-center gap-3 px-4 py-3"
+              >
+                <div className="flex-1 text-left">
+                  <p className="text-sm font-medium text-slate-900">
+                    {isPublic ? "Öffentlich" : "Privat"}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {isPublic
+                      ? "Jeder kann beitreten"
+                      : "Nur per Einladung"}
+                  </p>
+                </div>
+                {/* Toggle switch */}
+                <div className={[
+                  "relative h-6 w-11 flex-shrink-0 rounded-full transition-colors duration-200",
+                  isPublic ? "bg-blue-600" : "bg-slate-200",
+                ].join(" ")}>
+                  <div className={[
+                    "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform duration-200",
+                    isPublic ? "translate-x-5" : "translate-x-0.5",
+                  ].join(" ")} />
+                </div>
+              </button>
             </div>
 
             {/* Selection hint */}
@@ -286,6 +329,59 @@ export default function Profile() {
             </button>
           </div>
 
+        ) : tab === "discover" ? (
+          /* ── Öffentliche Gruppen ─────────────────────────────── */
+          <div className="flex flex-col">
+            {joinError ? (
+              <p className="px-4 pt-3 text-sm text-red-600">{joinError}</p>
+            ) : null}
+            {publicChats.length === 0 ? (
+              <EmptyState text="Keine öffentlichen Gruppen gefunden." />
+            ) : (
+              <>
+                <p className="px-4 py-2 text-xs text-slate-400">
+                  Tippe auf „Beitreten", um einer öffentlichen Gruppe beizutreten.
+                </p>
+                <div className="divide-y divide-slate-100 bg-white">
+                  {publicChats
+                    .filter((c) =>
+                      c.chatname.toLowerCase().includes(search.toLowerCase())
+                    )
+                    .sort((a, b) => a.chatname.localeCompare(b.chatname, "de"))
+                    .map((chat) => (
+                      <div key={chat.chatid} className="flex items-center gap-3 px-4 py-3">
+                        <div className={[
+                          "flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white",
+                          avatarColor(chat.chatname),
+                        ].join(" ")}>
+                          {chat.chatname.slice(0, 2).toUpperCase()}
+                        </div>
+                        <p className="flex-1 text-sm font-medium text-slate-900">
+                          {chat.chatname}
+                        </p>
+                        {chat.joined ? (
+                          <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                            Mitglied
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleJoin(chat.chatid)}
+                            disabled={joiningId !== null}
+                            className="rounded-full bg-blue-600 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                          >
+                            {joiningId === chat.chatid ? "…" : "Beitreten"}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                </div>
+              </>
+            )}
+          </div>
         ) : null}
       </div>
 
