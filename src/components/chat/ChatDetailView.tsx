@@ -76,7 +76,7 @@ export default function ChatDetailView({
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-slate-900 leading-tight">{chatName}</p>
             <p className="text-xs text-slate-400">
-              {chat ? (chat.visibility === "public" ? "Gruppe" : "Direktnachricht") : ""}
+              {chat ? (chat.directchat ? "Direktnachricht" : "Gruppe") : ""}
             </p>
           </div>
         </button>

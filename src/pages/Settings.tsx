@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { deregisterUser, logoutUser } from "../services/authApi";
-import { getInvites, joinChat, type ChatInvite } from "../services/chatApi";
+import { getInvites, getProfiles, joinChat, type ChatInvite } from "../services/chatApi";
 import BottomNav from "../components/BottomNav";
 
 export default function Settings() {
@@ -27,6 +27,19 @@ export default function Settings() {
     getInvites(token).then((result) => {
       if (result.ok && result.data) setInvites(result.data);
     });
+    // Fetch own profile if nickname/fullname not yet in localStorage (e.g. after fresh login)
+    if (!localStorage.getItem("nickname") || !localStorage.getItem("fullname")) {
+      const hash = localStorage.getItem("hash") || "";
+      getProfiles(token).then((result) => {
+        if (result.ok && result.data) {
+          const own = result.data.find((p) => p.hash === hash);
+          if (own) {
+            localStorage.setItem("nickname", own.nickname);
+            localStorage.setItem("fullname", own.fullname);
+          }
+        }
+      });
+    }
   }, [token]);
 
   async function handleCopyHash() {
@@ -132,7 +145,12 @@ export default function Settings() {
                   <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-700">
                     {invite.chatname.slice(0, 2).toUpperCase()}
                   </div>
-                  <p className="flex-1 text-sm font-medium text-slate-900">{invite.chatname}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-900">{invite.chatname}</p>
+                    {invite.owner ? (
+                      <p className="text-xs text-slate-400">von {invite.owner.nickname}</p>
+                    ) : null}
+                  </div>
                   <button
                     type="button"
                     onClick={() => handleJoin(invite.chatid)}

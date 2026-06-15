@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   deleteChat,
@@ -17,6 +17,9 @@ import { toPngDataUrl } from "../utils/imageUtils";
 
 type ViewMode = "list" | "detail" | "info";
 
+const POLL_INTERVAL_MS = 5000;
+const CHAT_LIST_POLL_MS = 15000;
+
 export default function Chat() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -26,6 +29,7 @@ export default function Chat() {
   const [loadingChats, setLoadingChats] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [selectedChat, setSelectedChat] = useState<ChatSummary | null>(null);
@@ -36,16 +40,35 @@ export default function Chat() {
   const [filterType, setFilterType] = useState<FilterType>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
 
+  const lastServerIdRef = useRef<number>(-1);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function handleSessionExpired() {
+    localStorage.clear();
+    setSessionExpired(true);
+  }
+
   useEffect(() => {
     if (!token) { navigate("/"); return; }
     async function loadChats() {
       setLoadingChats(true);
       const result = await getChats(token);
       setLoadingChats(false);
-      if (result.ok && result.data) setChats(result.data);
-      else setError(result.error || "Chats konnten nicht geladen werden.");
+      if (result.ok && result.data) {
+        setChats(result.data);
+      } else if (result.invalidToken) {
+        handleSessionExpired();
+      } else {
+        setError(result.error || "Chats konnten nicht geladen werden.");
+      }
     }
     void loadChats();
+    const interval = setInterval(async () => {
+      const result = await getChats(token);
+      if (result.ok && result.data) setChats(result.data);
+      else if (result.invalidToken) handleSessionExpired();
+    }, CHAT_LIST_POLL_MS);
+    return () => clearInterval(interval);
   }, [navigate, token]);
 
   useEffect(() => {
@@ -56,16 +79,65 @@ export default function Chat() {
 
   useEffect(() => {
     if (!token || !selectedChat) return;
-    async function loadMessages() {
-      setLoadingMessages(true);
-      if (!selectedChat) { setLoadingMessages(false); return; }
-      const result = await getMessages(token, selectedChat.chatid);
-      setLoadingMessages(false);
-      if (result.ok && result.data) setMessages(result.data);
-      else setError(result.error || "Nachrichten konnten nicht geladen werden.");
+
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
     }
-    void loadMessages();
-  }, [selectedChat, token]);
+    lastServerIdRef.current = -1;
+
+    const chatid = selectedChat.chatid;
+
+    async function loadInitial() {
+      setLoadingMessages(true);
+      const result = await getMessages(token, chatid);
+      setLoadingMessages(false);
+      if (result.ok && result.data) {
+        setMessages(result.data);
+        const ids = result.data.filter((m) => m.id !== undefined).map((m) => m.id!);
+        lastServerIdRef.current = ids.length > 0 ? Math.max(...ids) : 0;
+      } else if (result.invalidToken) {
+        handleSessionExpired();
+      } else {
+        setError(result.error || "Nachrichten konnten nicht geladen werden.");
+      }
+    }
+
+    void loadInitial();
+
+    pollingRef.current = setInterval(async () => {
+      if (lastServerIdRef.current < 0) return;
+      const result = await getMessages(token, chatid, lastServerIdRef.current + 1);
+      if (result.ok && result.data && result.data.length > 0) {
+        setMessages((prev) => {
+          const existingIds = new Set(
+            prev.map((m) => m.id).filter((id): id is number => id !== undefined),
+          );
+          const toAdd = result.data!.filter(
+            (m) => m.id !== undefined && !existingIds.has(m.id!),
+          );
+          if (toAdd.length === 0) return prev;
+          const maxId = Math.max(...toAdd.map((m) => m.id!));
+          lastServerIdRef.current = Math.max(lastServerIdRef.current, maxId);
+          return [...prev, ...toAdd];
+        });
+      } else if (result.invalidToken) {
+        handleSessionExpired();
+      }
+    }, POLL_INTERVAL_MS);
+
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, [selectedChat?.chatid, token]);
+
+  function updateLastServerId(msgs: ChatMessage[]) {
+    const ids = msgs.filter((m) => m.id !== undefined).map((m) => m.id!);
+    if (ids.length > 0) lastServerIdRef.current = Math.max(...ids);
+  }
 
   async function handleLeaveChat(): Promise<string | null> {
     if (!token || !selectedChat) return null;
@@ -110,12 +182,17 @@ export default function Chat() {
     const result = await postMessage({ token, text, chatid: selectedChat.chatid, important });
     setSending(false);
     if (!result.ok) {
-      setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, _status: "error" as const } : m));
+      setMessages((prev) =>
+        prev.map((m) => m.id === tempId ? { ...m, _status: "error" as const } : m),
+      );
       setError(result.error || "Nachricht konnte nicht gesendet werden.");
       return;
     }
     const refreshed = await getMessages(token, selectedChat.chatid);
-    if (refreshed.ok && refreshed.data) setMessages(refreshed.data);
+    if (refreshed.ok && refreshed.data) {
+      setMessages(refreshed.data);
+      updateLastServerId(refreshed.data);
+    }
   }
 
   async function handleSendPhoto(file: File) {
@@ -140,12 +217,17 @@ export default function Chat() {
     const result = await postMessage({ token, photo: base64, chatid: selectedChat.chatid });
     setSending(false);
     if (!result.ok) {
-      setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, _status: "error" as const } : m));
+      setMessages((prev) =>
+        prev.map((m) => m.id === tempId ? { ...m, _status: "error" as const } : m),
+      );
       setError(result.error || "Foto konnte nicht gesendet werden.");
       return;
     }
     const refreshed = await getMessages(token, selectedChat.chatid);
-    if (refreshed.ok && refreshed.data) setMessages(refreshed.data);
+    if (refreshed.ok && refreshed.data) {
+      setMessages(refreshed.data);
+      updateLastServerId(refreshed.data);
+    }
   }
 
   async function handleSendLocation() {
@@ -170,14 +252,40 @@ export default function Chat() {
         const result = await postMessage({ token, text: "Standort", position, chatid: selectedChat.chatid });
         setSending(false);
         if (!result.ok) {
-          setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, _status: "error" as const } : m));
+          setMessages((prev) =>
+            prev.map((m) => m.id === tempId ? { ...m, _status: "error" as const } : m),
+          );
           setError(result.error || "Standort konnte nicht gesendet werden.");
           return;
         }
         const refreshed = await getMessages(token, selectedChat.chatid);
-        if (refreshed.ok && refreshed.data) setMessages(refreshed.data);
+        if (refreshed.ok && refreshed.data) {
+          setMessages(refreshed.data);
+          updateLastServerId(refreshed.data);
+        }
       },
       () => setError("Standort konnte nicht ermittelt werden."),
+    );
+  }
+
+  if (sessionExpired) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-slate-50 px-8 text-center">
+        <svg className="h-14 w-14 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+        </svg>
+        <h2 className="text-lg font-semibold text-slate-800">Session abgelaufen</h2>
+        <p className="text-sm text-slate-500">
+          Deine Sitzung ist nicht mehr gültig. Bitte melde dich erneut an.
+        </p>
+        <button
+          type="button"
+          onClick={() => navigate("/")}
+          className="mt-2 rounded-2xl bg-blue-600 px-8 py-3 text-sm font-semibold text-white hover:bg-blue-700"
+        >
+          Zum Login
+        </button>
+      </div>
     );
   }
 
@@ -216,7 +324,6 @@ export default function Chat() {
         ) : selectedChat ? (
           <ChatInfoView
             chat={selectedChat}
-            messages={messages}
             onBack={() => setViewMode("detail")}
             onLeave={handleLeaveChat}
             onDelete={handleDeleteChat}

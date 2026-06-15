@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { loginUser } from "../services/authApi";
+import { loginUser, validateToken } from "../services/authApi";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -34,9 +34,19 @@ export default function Login() {
       return;
     }
 
+    const validation = await validateToken(result.data.token);
+    if (!validation.ok || validation.data !== "Token valid") {
+      setError(
+        "Server-Fehler: Token wurde ausgestellt aber sofort abgelehnt. " +
+        "Bitte versuche es erneut oder wende dich an den Server-Administrator.",
+      );
+      return;
+    }
+
     localStorage.setItem("token", result.data.token);
     localStorage.setItem("hash", result.data.hash);
     localStorage.setItem("userid", userid.trim());
+
     setSuccess("Login erfolgreich. Weiterleitung ...");
     setTimeout(() => navigate("/chat"), 200);
   }

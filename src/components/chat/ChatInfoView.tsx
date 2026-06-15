@@ -1,12 +1,11 @@
-import { useMemo, useState } from "react";
-import { type ChatMessage, type ChatSummary } from "../../services/chatApi";
+import { useState } from "react";
+import { type ChatSummary } from "../../services/chatApi";
 import { avatarColor, getInitials } from "../../utils/avatarUtils";
 
 export default function ChatInfoView({
-  chat, messages, onBack, onLeave, onDelete,
+  chat, onBack, onLeave, onDelete,
 }: {
   chat: ChatSummary;
-  messages: ChatMessage[];
   onBack: () => void;
   onLeave: () => Promise<string | null>;
   onDelete: () => Promise<string | null>;
@@ -16,20 +15,8 @@ export default function ChatInfoView({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [actionError, setActionError] = useState("");
 
-  const isGroup = chat.visibility === "public";
+  const isGroup = !chat.directchat;
   const isOwner = chat.role === "owner" || chat.role === "admin";
-
-  const members = useMemo(() => {
-    const seen = new Set<string>();
-    const result: { userid: string; usernick: string }[] = [];
-    for (const msg of messages) {
-      if (msg.userid && !seen.has(msg.userid)) {
-        seen.add(msg.userid);
-        result.push({ userid: msg.userid, usernick: msg.usernick || msg.userid });
-      }
-    }
-    return result.sort((a, b) => a.usernick.localeCompare(b.usernick, "de"));
-  }, [messages]);
 
   async function handleLeave() {
     setLeaving(true);
@@ -70,39 +57,86 @@ export default function ChatInfoView({
           </div>
           <h2 className="mt-4 text-xl font-bold text-slate-900">{chat.chatname}</h2>
           <span className="mt-1 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-500">
-            {isGroup ? "Gruppe" : "Direktnachricht"}
+            {isGroup
+              ? chat.visibility === "public" ? "Öffentliche Gruppe" : "Private Gruppe"
+              : "Direktnachricht"}
           </span>
+          {chat.owner ? (
+            <p className="mt-2 text-xs text-slate-400">
+              Erstellt von <span className="font-medium text-slate-600">{chat.owner.nickname}</span>
+            </p>
+          ) : null}
         </div>
 
-        {isGroup && (
-          <div className="mt-4">
-            <p className="px-4 pb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-              Mitglieder ({members.length})
-            </p>
-            <div className="divide-y divide-slate-100 bg-white">
-              {members.length === 0 ? (
-                <p className="px-4 py-4 text-sm text-slate-400">Noch keine Nachrichten gesendet.</p>
-              ) : (
-                members.map((m) => (
-                  <div key={m.userid} className="flex items-center gap-3 px-4 py-3">
+        {/* Participants */}
+        <div className="mt-4">
+          <p className="px-4 pb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Mitglieder ({chat.participants.length})
+          </p>
+          <div className="divide-y divide-slate-100 bg-white">
+            {chat.participants.length === 0 ? (
+              <p className="px-4 py-4 text-sm text-slate-400">Keine Mitglieder gefunden.</p>
+            ) : (
+              chat.participants
+                .slice()
+                .sort((a, b) => a.nickname.localeCompare(b.nickname, "de"))
+                .map((p) => (
+                  <div key={p.hash} className="flex items-center gap-3 px-4 py-3">
                     <div className={[
                       "flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white",
-                      avatarColor(m.usernick),
+                      avatarColor(p.nickname),
                     ].join(" ")}>
-                      {getInitials(m.usernick)}
+                      {getInitials(p.nickname)}
                     </div>
-                    <p className="flex-1 text-sm font-medium text-slate-900">{m.usernick}</p>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-900">{p.nickname}</p>
+                      {p.fullname ? (
+                        <p className="text-xs text-slate-400 truncate">{p.fullname}</p>
+                      ) : null}
+                    </div>
+                    {chat.owner?.hash === p.hash ? (
+                      <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                        Owner
+                      </span>
+                    ) : null}
                   </div>
                 ))
-              )}
-            </div>
-            {members.length > 0 && (
-              <p className="px-4 pt-2 pb-1 text-xs text-slate-400">
-                Nur Mitglieder, die bereits geschrieben haben, werden angezeigt.
-              </p>
             )}
           </div>
-        )}
+        </div>
+
+        {/* Invited (pending) */}
+        {chat.invited.length > 0 ? (
+          <div className="mt-4">
+            <p className="px-4 pb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Eingeladen ({chat.invited.length})
+            </p>
+            <div className="divide-y divide-slate-100 bg-white">
+              {chat.invited
+                .slice()
+                .sort((a, b) => a.nickname.localeCompare(b.nickname, "de"))
+                .map((p) => (
+                  <div key={p.hash} className="flex items-center gap-3 px-4 py-3">
+                    <div className={[
+                      "flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white opacity-60",
+                      avatarColor(p.nickname),
+                    ].join(" ")}>
+                      {getInitials(p.nickname)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-500">{p.nickname}</p>
+                      {p.fullname ? (
+                        <p className="text-xs text-slate-400 truncate">{p.fullname}</p>
+                      ) : null}
+                    </div>
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                      Ausstehend
+                    </span>
+                  </div>
+                ))}
+            </div>
+          </div>
+        ) : null}
 
         <div className="mt-4 divide-y divide-slate-100 bg-white">
           {actionError ? <p className="px-4 py-3 text-sm text-red-600">{actionError}</p> : null}
