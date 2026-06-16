@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
-  deleteChat,
   getChats,
   getMessages,
   getPhoto,
@@ -9,7 +8,6 @@ import {
   type ChatMessage,
   type ChatSummary,
 } from "../services/chatApi";
-import { validateToken } from "../services/authApi";
 import BottomNav from "../components/BottomNav";
 
 type FilterType = "all" | "groups" | "unread";
@@ -417,7 +415,6 @@ export default function Chat() {
   const [loadingChats, setLoadingChats] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
-  const [replyToMessage, setReplyToMessage] = useState<ChatMessage | null>(null);
 
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [selectedChat, setSelectedChat] = useState<ChatSummary | null>(null);
@@ -462,124 +459,19 @@ export default function Chat() {
   async function handleSendMessage(text: string) {
     if (!token || !selectedChat) return;
 
-    const tempId = Date.now();
-    const optimistic: ChatMessage = {
-      id: tempId,
-      userid: localStorage.getItem("userid") || "",
-      usernick: localStorage.getItem("nickname") || undefined,
-      text: input.text,
-      position: input.position,
-      replyTo: replyToMessage?.id,
-      localPreview: input.localPreview,
-      time: new Date().toISOString(),
-      chatid: selectedChat.chatid,
-      important,
-      _status: "sending",
-    };
-    setMessages((prev) => [...prev, optimistic]);
     setSending(true);
     setError("");
+
     const result = await postTextMessage({ token, text, chatid: selectedChat.chatid });
     setSending(false);
+
     if (!result.ok) {
-      setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, _status: "error" as const } : m));
       setError(result.error || "Nachricht konnte nicht gesendet werden.");
-      // keep reply target so user can retry
       return;
     }
+
     const refreshed = await getMessages(token, selectedChat.chatid);
     if (refreshed.ok && refreshed.data) setMessages(refreshed.data);
-  }
-
-  async function handleSendPhoto(file: File) {
-    if (!token || !selectedChat) return;
-    let dataUrl: string;
-    try { dataUrl = await toPngDataUrl(file); }
-    catch { setError("Bild konnte nicht verarbeitet werden."); return; }
-    const tempId = Date.now();
-    const optimistic: ChatMessage = {
-      id: tempId,
-      userid: localStorage.getItem("userid") || "",
-      usernick: localStorage.getItem("nickname") || undefined,
-      time: new Date().toISOString(),
-      chatid: selectedChat.chatid,
-      _status: "sending",
-      _localPhotoPreview: dataUrl,
-    };
-    setMessages((prev) => [...prev, optimistic]);
-    setSending(true);
-    setError("");
-    const base64 = dataUrl.replace(/^data:image\/png;base64,/, "");
-    const result = await postMessage({ token, photo: base64, chatid: selectedChat.chatid });
-    setSending(false);
-    if (!result.ok) {
-      setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, _status: "error" as const } : m));
-      setError(result.error || "Foto konnte nicht gesendet werden.");
-      return;
-    }
-    const refreshed = await getMessages(token, selectedChat.chatid);
-    if (refreshed.ok && refreshed.data) setMessages(refreshed.data);
-    setReplyToMessage(null);
-  }
-
-  async function handleDeleteMessage(msg: ChatMessage) {
-    if (!msg.id || !token) return;
-    if (!confirm("Nachricht wirklich löschen?")) return;
-
-    // optimistic remove
-    const old = messages;
-    setMessages((prev) => prev.filter((m) => m.id !== msg.id));
-
-    const res = await deleteMessage(token, msg.id);
-    if (!res.ok) {
-      setMessages(old);
-      setError(res.error || "Löschen fehlgeschlagen.");
-    }
-  }
-
-  async function handleSendMessage(text: string) {
-    await sendChatPayload({ text });
-  }
-
-  async function handleSendPhoto(photo: string) {
-    await sendChatPayload({ photo: stripDataUrlPrefix(photo), localPreview: photo });
-  }
-
-  async function handleSendLocation(position: string) {
-    await sendChatPayload({ position });
-  }
-
-  async function handleSendLocation() {
-    if (!token || !selectedChat) return;
-    if (!navigator.geolocation) { setError("GPS nicht verfügbar."); return; }
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const position = JSON.stringify({ lat: pos.coords.latitude, lon: pos.coords.longitude });
-        const tempId = Date.now();
-        const optimistic: ChatMessage = {
-          id: tempId,
-          userid: localStorage.getItem("userid") || "",
-          usernick: localStorage.getItem("nickname") || undefined,
-          time: new Date().toISOString(),
-          chatid: selectedChat.chatid,
-          _status: "sending",
-          position,
-        };
-        setMessages((prev) => [...prev, optimistic]);
-        setSending(true);
-        setError("");
-        const result = await postMessage({ token, text: "Standort", position, chatid: selectedChat.chatid });
-        setSending(false);
-        if (!result.ok) {
-          setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, _status: "error" as const } : m));
-          setError(result.error || "Standort konnte nicht gesendet werden.");
-          return;
-        }
-        const refreshed = await getMessages(token, selectedChat.chatid);
-        if (refreshed.ok && refreshed.data) setMessages(refreshed.data);
-      },
-      () => setError("Standort konnte nicht ermittelt werden."),
-    );
   }
 
   return (
