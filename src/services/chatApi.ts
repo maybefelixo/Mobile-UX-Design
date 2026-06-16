@@ -21,6 +21,7 @@ export type ChatMessage = {
   photoid?: string;
   localPreview?: string;
   _status?: "sending" | "error";
+  _localPhotoPreview?: string;
 };
 
 export type UserProfile = {
