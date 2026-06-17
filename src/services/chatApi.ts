@@ -1,11 +1,22 @@
 import { getApi, getBinaryApi, postApi, type ApiResult } from "./apiClient";
 
+export type UserProfile = {
+  hash: string;
+  nickname: string;
+  fullname: string;
+  userid: string;
+};
+
 export type ChatSummary = {
   chatid: number;
   chatname: string;
   visibility: string;
   role: string;
   joined: boolean;
+  directchat: boolean;
+  owner: UserProfile | null;
+  participants: UserProfile[];
+  invited: UserProfile[];
 };
 
 export type ChatMessage = {
@@ -16,32 +27,34 @@ export type ChatMessage = {
   text?: string;
   important?: boolean;
   usernick?: string;
+  userhash?: string;
   photoid?: string;
   position?: string;
   _status?: "sending" | "error";
   _localPhotoPreview?: string;
 };
 
-export type UserProfile = {
-  hash: string;
-  nickname: string;
-};
-
 export type ChatInvite = {
   chatid: number;
   chatname: string;
+  owner: UserProfile | null;
 };
+
+function normalizeProfile(data: Record<string, unknown>): UserProfile {
+  return {
+    hash: String(data.hash ?? ""),
+    nickname: String(data.nickname ?? ""),
+    fullname: String(data.fullname ?? ""),
+    userid: String(data.userid ?? ""),
+  };
+}
 
 function normalizeProfiles(raw: unknown): UserProfile[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .map((item) => {
       if (!item || typeof item !== "object") return null;
-      const data = item as Record<string, unknown>;
-      return {
-        hash: String(data.hash ?? ""),
-        nickname: String(data.nickname ?? ""),
-      };
+      return normalizeProfile(item as Record<string, unknown>);
     })
     .filter((p): p is UserProfile => p !== null);
 }
@@ -55,22 +68,20 @@ function normalizeInvites(raw: unknown): ChatInvite[] {
       return {
         chatid: Number(data.chatid ?? 0),
         chatname: String(data.chatname ?? ""),
+        owner:
+          data.owner && typeof data.owner === "object"
+            ? normalizeProfile(data.owner as Record<string, unknown>)
+            : null,
       };
     })
     .filter((i): i is ChatInvite => i !== null);
 }
 
 function normalizeChats(raw: unknown): ChatSummary[] {
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-
+  if (!Array.isArray(raw)) return [];
   return raw
     .map((item) => {
-      if (!item || typeof item !== "object") {
-        return null;
-      }
-
+      if (!item || typeof item !== "object") return null;
       const data = item as Record<string, unknown>;
       return {
         chatid: Number(data.chatid ?? 0),
@@ -78,22 +89,27 @@ function normalizeChats(raw: unknown): ChatSummary[] {
         visibility: String(data.visibility ?? "private"),
         role: String(data.role ?? "none"),
         joined: Boolean(data.joined ?? false),
+        directchat: Boolean(data.directchat ?? false),
+        owner:
+          data.owner && typeof data.owner === "object"
+            ? normalizeProfile(data.owner as Record<string, unknown>)
+            : null,
+        participants: Array.isArray(data.participants)
+          ? normalizeProfiles(data.participants)
+          : [],
+        invited: Array.isArray(data.invited)
+          ? normalizeProfiles(data.invited)
+          : [],
       };
     })
     .filter((chat): chat is ChatSummary => chat !== null);
 }
 
 function normalizeMessages(raw: unknown): ChatMessage[] {
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-
-  const mapped: Array<ChatMessage | null> = raw
+  if (!Array.isArray(raw)) return [];
+  return raw
     .map((item) => {
-      if (!item || typeof item !== "object") {
-        return null;
-      }
-
+      if (!item || typeof item !== "object") return null;
       const data = item as Record<string, unknown>;
       return {
         id: data.id ? Number(data.id) : undefined,
@@ -103,20 +119,17 @@ function normalizeMessages(raw: unknown): ChatMessage[] {
         text: data.text ? String(data.text) : "",
         important: Boolean(data.important ?? false),
         usernick: data.usernick ? String(data.usernick) : undefined,
+        userhash: data.userhash ? String(data.userhash) : undefined,
         photoid: data.photoid ? String(data.photoid) : undefined,
         position: data.position ? String(data.position) : undefined,
       };
-    });
-
-  return mapped.filter((msg): msg is ChatMessage => msg !== null);
+    })
+    .filter((msg): msg is ChatMessage => msg !== null);
 }
 
 export async function getChats(token: string): Promise<ApiResult<ChatSummary[]>> {
   return getApi(
-    {
-      request: "getchats",
-      token,
-    },
+    { request: "getchats", token },
     (json) => normalizeChats(json.chats),
   );
 }
@@ -126,14 +139,9 @@ export async function getMessages(
   chatid?: number,
   fromid?: number,
 ): Promise<ApiResult<ChatMessage[]>> {
-  const params: Record<string, string> = {
-    request: "getmessages",
-    token,
-  };
-
+  const params: Record<string, string> = { request: "getmessages", token };
   if (typeof chatid === "number") params.chatid = String(chatid);
   if (typeof fromid === "number") params.fromid = String(fromid);
-
   return getApi(params, (json) => normalizeMessages(json.messages));
 }
 
@@ -157,13 +165,11 @@ export async function postMessage(input: {
     request: "postmessage",
     token: input.token,
   };
-
   if (input.text !== undefined) payload.text = input.text;
   if (input.photo !== undefined) payload.photo = input.photo;
   if (input.position !== undefined) payload.position = input.position;
   if (typeof input.chatid === "number") payload.chatid = input.chatid;
   if (input.important !== undefined) payload.important = input.important;
-
   return postApi(payload, (json) => json.message || "Nachricht gesendet.");
 }
 
@@ -189,15 +195,15 @@ export async function createChat(input: {
   token: string;
   chatname: string;
   ispublic?: boolean;
+  directchat?: boolean;
 }): Promise<ApiResult<number>> {
   const params: Record<string, string> = {
     request: "createchat",
     token: input.token,
     chatname: input.chatname,
   };
-
   if (input.ispublic !== undefined) params.ispublic = String(input.ispublic);
-
+  if (input.directchat !== undefined) params.directchat = String(input.directchat);
   return getApi(params, (json) => Number(json.chatid ?? 0));
 }
 
