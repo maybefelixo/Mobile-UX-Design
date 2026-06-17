@@ -12,6 +12,7 @@ export default function ChatInfoView({
 }) {
   const [leaving, setLeaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [actionError, setActionError] = useState("");
 
@@ -23,7 +24,11 @@ export default function ChatInfoView({
     setActionError("");
     const err = await onLeave();
     setLeaving(false);
-    if (err) setActionError(err);
+    if (err) {
+      setActionError(err);
+      return;
+    }
+    setConfirmLeave(false);
   }
 
   async function handleDelete() {
@@ -142,17 +147,50 @@ export default function ChatInfoView({
           {actionError ? <p className="px-4 py-3 text-sm text-red-600">{actionError}</p> : null}
 
           {!isOwner && (
-            <button
-              type="button"
-              onClick={handleLeave}
-              disabled={leaving || deleting}
-              className="flex w-full items-center gap-3 px-4 py-4 text-red-600 disabled:opacity-50"
-            >
-              <svg className="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h6a2 2 0 012 2v1" />
-              </svg>
-              <span className="text-sm font-medium">{leaving ? "Verlasse…" : "Chat verlassen"}</span>
-            </button>
+            confirmLeave ? (
+              <div className="p-4 space-y-3">
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+                  <p className="font-semibold text-red-700">
+                    {isGroup ? "Gruppe verlassen?" : "Direktnachricht verlassen?"}
+                  </p>
+                  <p className="mt-1 text-xs text-red-600">
+                    {isGroup
+                      ? "Du wirst aus der Gruppe entfernt und siehst keine neuen Nachrichten mehr."
+                      : "Die Direktnachricht wird für dich aus der Übersicht entfernt."}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleLeave}
+                    disabled={leaving || deleting}
+                    className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+                  >
+                    {leaving ? "Verlasse…" : "Ja, verlassen"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmLeave(false)}
+                    disabled={leaving || deleting}
+                    className="flex-1 rounded-xl bg-slate-100 py-2.5 text-sm font-medium text-slate-600"
+                  >
+                    Abbrechen
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => { setConfirmLeave(true); setActionError(""); }}
+                disabled={leaving || deleting}
+                className="flex w-full items-center gap-3 px-4 py-4 text-red-600 disabled:opacity-50"
+              >
+                <svg className="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h6a2 2 0 012 2v1" />
+                </svg>
+                <span className="text-sm font-medium">Chat verlassen</span>
+              </button>
+            )
           )}
 
           {isOwner && (
