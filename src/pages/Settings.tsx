@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { deregisterUser, editProfile, logoutUser } from "../services/authApi";
-import { getInvites, joinChat, rejectInvite, type ChatInvite } from "../services/chatApi";
+import { deregisterUser, logoutUser } from "../services/authApi";
+import { getInvites, getProfiles, joinChat, type ChatInvite } from "../services/chatApi";
 import BottomNav from "../components/BottomNav";
 
 export default function Settings() {
@@ -17,17 +17,7 @@ export default function Settings() {
   const [error, setError] = useState("");
   const [invites, setInvites] = useState<ChatInvite[]>([]);
   const [joiningId, setJoiningId] = useState<number | null>(null);
-  const [rejectingId, setRejectingId] = useState<number | null>(null);
   const [hashCopied, setHashCopied] = useState(false);
-
-  // Edit profile
-  const [editMode, setEditMode] = useState(false);
-  const [editNickname, setEditNickname] = useState(nickname);
-  const [editFullname, setEditFullname] = useState(fullname);
-  const [editPassword, setEditPassword] = useState("");
-  const [editSaving, setEditSaving] = useState(false);
-  const [editSuccess, setEditSuccess] = useState(false);
-  const [editError, setEditError] = useState("");
 
   const displayName = nickname || userid || "?";
   const initials = displayName.slice(0, 2).toUpperCase();
@@ -37,6 +27,19 @@ export default function Settings() {
     getInvites(token).then((result) => {
       if (result.ok && result.data) setInvites(result.data);
     });
+    // Fetch own profile if nickname/fullname not yet in localStorage (e.g. after fresh login)
+    if (!localStorage.getItem("nickname") || !localStorage.getItem("fullname")) {
+      const hash = localStorage.getItem("hash") || "";
+      getProfiles(token).then((result) => {
+        if (result.ok && result.data) {
+          const own = result.data.find((p) => p.hash === hash);
+          if (own) {
+            localStorage.setItem("nickname", own.nickname);
+            localStorage.setItem("fullname", own.fullname);
+          }
+        }
+      });
+    }
   }, [token]);
 
   async function handleCopyHash() {
@@ -52,36 +55,6 @@ export default function Settings() {
       setInvites((prev) => prev.filter((i) => i.chatid !== chatid));
     }
     setJoiningId(null);
-  }
-
-  async function handleReject(chatid: number) {
-    setRejectingId(chatid);
-    const result = await rejectInvite(token, chatid);
-    if (result.ok) {
-      setInvites((prev) => prev.filter((i) => i.chatid !== chatid));
-    }
-    setRejectingId(null);
-  }
-
-  async function handleSaveProfile() {
-    setEditSaving(true);
-    setEditError("");
-    setEditSuccess(false);
-    const input: { nickname?: string; fullname?: string; password?: string } = {};
-    if (editNickname.trim()) input.nickname = editNickname.trim();
-    if (editFullname.trim()) input.fullname = editFullname.trim();
-    if (editPassword.trim()) input.password = editPassword.trim();
-    const result = await editProfile(token, input);
-    setEditSaving(false);
-    if (!result.ok) {
-      setEditError(result.error || "Fehler beim Speichern.");
-      return;
-    }
-    if (input.nickname) localStorage.setItem("nickname", input.nickname);
-    if (input.fullname) localStorage.setItem("fullname", input.fullname);
-    setEditSuccess(true);
-    setEditPassword("");
-    setEditMode(false);
   }
 
   async function handleLogout() {
@@ -160,76 +133,6 @@ export default function Settings() {
           ) : null}
         </div>
 
-        {/* Edit profile */}
-        {!editMode ? (
-          <div className="flex flex-col gap-2">
-            {editSuccess ? (
-              <p className="text-center text-sm text-emerald-600">Profil erfolgreich aktualisiert.</p>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => { setEditMode(true); setEditSuccess(false); setEditError(""); }}
-              className="w-full rounded-2xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Profil bearbeiten
-            </button>
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-100 rounded-2xl bg-white shadow-sm">
-            <div className="px-4 py-3">
-              <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-400">Nickname</p>
-              <input
-                type="text"
-                value={editNickname}
-                onChange={(e) => setEditNickname(e.target.value)}
-                className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
-                placeholder="Nickname…"
-              />
-            </div>
-            <div className="px-4 py-3">
-              <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-400">Vollständiger Name</p>
-              <input
-                type="text"
-                value={editFullname}
-                onChange={(e) => setEditFullname(e.target.value)}
-                className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
-                placeholder="Vor- und Nachname…"
-              />
-            </div>
-            <div className="px-4 py-3">
-              <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-400">Neues Passwort (optional)</p>
-              <input
-                type="password"
-                value={editPassword}
-                onChange={(e) => setEditPassword(e.target.value)}
-                className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
-                placeholder="Leer lassen, um unverändert zu lassen…"
-              />
-            </div>
-            {editError ? (
-              <p className="px-4 py-2 text-sm text-red-600">{editError}</p>
-            ) : null}
-            <div className="flex gap-2 px-4 py-3">
-              <button
-                type="button"
-                onClick={handleSaveProfile}
-                disabled={editSaving}
-                className="flex-1 rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white disabled:opacity-50 hover:bg-blue-700"
-              >
-                {editSaving ? "Speichere…" : "Speichern"}
-              </button>
-              <button
-                type="button"
-                onClick={() => { setEditMode(false); setEditError(""); }}
-                disabled={editSaving}
-                className="flex-1 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-700"
-              >
-                Abbrechen
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Invitations */}
         {invites.length > 0 ? (
           <div className="rounded-2xl bg-white shadow-sm">
@@ -242,25 +145,20 @@ export default function Settings() {
                   <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-700">
                     {invite.chatname.slice(0, 2).toUpperCase()}
                   </div>
-                  <p className="flex-1 text-sm font-medium text-slate-900">{invite.chatname}</p>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleReject(invite.chatid)}
-                      disabled={joiningId === invite.chatid || rejectingId === invite.chatid}
-                      className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-                    >
-                      {rejectingId === invite.chatid ? "…" : "Ablehnen"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleJoin(invite.chatid)}
-                      disabled={joiningId === invite.chatid || rejectingId === invite.chatid}
-                      className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      {joiningId === invite.chatid ? "…" : "Beitreten"}
-                    </button>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-900">{invite.chatname}</p>
+                    {invite.owner ? (
+                      <p className="text-xs text-slate-400">von {invite.owner.nickname}</p>
+                    ) : null}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => handleJoin(invite.chatid)}
+                    disabled={joiningId === invite.chatid}
+                    className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {joiningId === invite.chatid ? "…" : "Beitreten"}
+                  </button>
                 </div>
               ))}
             </div>

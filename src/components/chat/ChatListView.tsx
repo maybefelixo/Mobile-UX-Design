@@ -2,7 +2,7 @@ import { type ChatSummary } from "../../services/chatApi";
 import { avatarColor, getInitials } from "../../utils/avatarUtils";
 import { formatTime } from "../../utils/dateUtils";
 
-export type FilterType = "all" | "groups" | "direct" | "unread";
+export type FilterType = "all" | "groups" | "direct";
 
 export default function ChatListView({
   chats, selectedChatId, onSelectChat, loadingChats,
@@ -20,8 +20,8 @@ export default function ChatListView({
 }) {
   const filtered = chats
     .filter((chat) => {
-      if (filterType === "groups") return chat.visibility === "public";
-      if (filterType === "direct") return chat.visibility !== "public";
+      if (filterType === "groups") return !chat.directchat;
+      if (filterType === "direct") return chat.directchat;
       return true;
     })
     .filter((chat) => chat.chatname.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -48,8 +48,8 @@ export default function ChatListView({
       </div>
 
       <div className="flex gap-2 px-4 pb-3">
-        {(["all", "direct", "groups", "unread"] as FilterType[]).map((type) => {
-          const label = type === "all" ? "Alle" : type === "direct" ? "Direkt" : type === "groups" ? "Gruppen" : "Ungelesen";
+        {(["all", "direct", "groups"] as FilterType[]).map((type) => {
+          const label = type === "all" ? "Alle" : type === "direct" ? "Direkt" : "Gruppen";
           return (
             <button
               key={type}
@@ -98,7 +98,11 @@ export default function ChatListView({
                   <span className="ml-2 flex-shrink-0 text-xs text-slate-400">{formatTime(undefined)}</span>
                 </div>
                 <p className="mt-0.5 truncate text-sm text-slate-500">
-                  {chat.visibility === "private" ? "🔒 Privat" : "🌐 Öffentlich"} · {chat.role}
+                  {chat.directchat
+                    ? "💬 Direktnachricht"
+                    : chat.visibility === "public"
+                    ? "🌐 Öffentliche Gruppe"
+                    : "🔒 Private Gruppe"} · {chat.role}
                 </p>
               </div>
             </button>

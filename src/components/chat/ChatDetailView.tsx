@@ -76,7 +76,7 @@ export default function ChatDetailView({
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-slate-900 leading-tight">{chatName}</p>
             <p className="text-xs text-slate-400">
-              {chat ? (chat.visibility === "public" ? "Gruppe" : "Direktnachricht") : ""}
+              {chat ? (chat.directchat ? "Direktnachricht" : "Gruppe") : ""}
             </p>
           </div>
         </button>
@@ -220,7 +220,7 @@ export default function ChatDetailView({
           disabled={sending || !messageText.trim()}
           className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow disabled:opacity-50"
         >
-          <svg className="h-5 w-5 translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
           </svg>
         </button>
