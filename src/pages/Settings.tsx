@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { deregisterUser, logoutUser } from "../services/authApi";
+import { deregisterUser, editProfile, logoutUser } from "../services/authApi";
 import { getInvites, getProfiles, joinChat, type ChatInvite } from "../services/chatApi";
 import BottomNav from "../components/BottomNav";
 
@@ -18,6 +18,14 @@ export default function Settings() {
   const [invites, setInvites] = useState<ChatInvite[]>([]);
   const [joiningId, setJoiningId] = useState<number | null>(null);
   const [hashCopied, setHashCopied] = useState(false);
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editNickname, setEditNickname] = useState(nickname);
+  const [editFullname, setEditFullname] = useState(fullname);
+  const [editPassword, setEditPassword] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editSuccess, setEditSuccess] = useState(false);
+  const [editError, setEditError] = useState("");
 
   const displayName = nickname || userid || "?";
   const initials = displayName.slice(0, 2).toUpperCase();
@@ -55,6 +63,33 @@ export default function Settings() {
       setInvites((prev) => prev.filter((i) => i.chatid !== chatid));
     }
     setJoiningId(null);
+  }
+
+  async function handleSaveProfile() {
+    setEditSaving(true);
+    setEditError("");
+    setEditSuccess(false);
+    const input: { nickname?: string; fullname?: string; password?: string } = {};
+    if (editNickname.trim() && editNickname.trim() !== nickname) input.nickname = editNickname.trim();
+    if (editFullname.trim() && editFullname.trim() !== fullname) input.fullname = editFullname.trim();
+    if (editPassword) input.password = editPassword;
+    if (Object.keys(input).length === 0) {
+      setEditSaving(false);
+      setEditOpen(false);
+      return;
+    }
+    const result = await editProfile(token, input);
+    setEditSaving(false);
+    if (!result.ok) {
+      setEditError(result.error || "Speichern fehlgeschlagen.");
+      return;
+    }
+    if (input.nickname) localStorage.setItem("nickname", input.nickname);
+    if (input.fullname) localStorage.setItem("fullname", input.fullname);
+    setEditPassword("");
+    setEditSuccess(true);
+    setEditOpen(false);
+    setTimeout(() => setEditSuccess(false), 3000);
   }
 
   async function handleLogout() {
@@ -132,6 +167,69 @@ export default function Settings() {
             </div>
           ) : null}
         </div>
+
+        {/* Edit Profile */}
+        <div className="rounded-2xl bg-white shadow-sm overflow-hidden">
+          <button
+            type="button"
+            onClick={() => { setEditOpen((v) => !v); setEditError(""); setEditSuccess(false); }}
+            className="flex w-full items-center justify-between px-4 py-3 text-left"
+          >
+            <span className="text-sm font-semibold text-slate-900">Profil bearbeiten</span>
+            <svg
+              className={["h-5 w-5 text-slate-400 transition-transform", editOpen ? "rotate-180" : ""].join(" ")}
+              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {editOpen ? (
+            <div className="border-t border-slate-100 px-4 pb-4 pt-3 flex flex-col gap-3">
+              <div>
+                <label className="text-xs font-medium uppercase tracking-wide text-slate-400">Nickname</label>
+                <input
+                  type="text"
+                  value={editNickname}
+                  onChange={(e) => setEditNickname(e.target.value)}
+                  className="mt-1 w-full rounded-xl bg-slate-100 px-3 py-2.5 text-sm text-slate-900 outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium uppercase tracking-wide text-slate-400">Name</label>
+                <input
+                  type="text"
+                  value={editFullname}
+                  onChange={(e) => setEditFullname(e.target.value)}
+                  className="mt-1 w-full rounded-xl bg-slate-100 px-3 py-2.5 text-sm text-slate-900 outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium uppercase tracking-wide text-slate-400">Neues Passwort</label>
+                <input
+                  type="password"
+                  value={editPassword}
+                  onChange={(e) => setEditPassword(e.target.value)}
+                  placeholder="Leer lassen = unverändert"
+                  className="mt-1 w-full rounded-xl bg-slate-100 px-3 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                />
+              </div>
+              {editError ? <p className="text-sm text-red-600">{editError}</p> : null}
+              <button
+                type="button"
+                onClick={handleSaveProfile}
+                disabled={editSaving}
+                className="w-full rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {editSaving ? "Speichere…" : "Speichern"}
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        {editSuccess ? (
+          <p className="text-center text-sm font-medium text-emerald-600">Profil erfolgreich aktualisiert.</p>
+        ) : null}
 
         {/* Invitations */}
         {invites.length > 0 ? (

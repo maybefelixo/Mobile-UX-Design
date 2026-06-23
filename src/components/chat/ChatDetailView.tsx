@@ -97,7 +97,7 @@ export default function ChatDetailView({
             const isOwn = (msg.userid || "") === myUserid;
             const senderName = msg.userfullname || msg.usernick || msg.userid || "?";
             const showDate = i === 0 || (msg.time && messages[i - 1]?.time && !isSameDay(msg.time, messages[i - 1].time!));
-            const isPhoto = !!(msg.photoid || msg._localPhotoPreview);
+            const isPhoto = !!(msg.photoid || msg.fileid || msg._localPhotoPreview || msg._localFilePreview);
             const isLocation = !!msg.position && !isPhoto;
 
             return (
@@ -132,7 +132,7 @@ export default function ChatDetailView({
                       msg.important ? "ring-[3px] ring-red-500" : "",
                     ].join(" ")}>
                       {isPhoto
-                        ? <PhotoMessage token={token} photoid={msg.photoid} localPreview={msg._localPhotoPreview} mimetype={msg.mimetype} />
+                        ? <PhotoMessage token={token} photoid={msg.photoid} fileid={msg.fileid} filename={msg.filename} localPreview={msg._localPhotoPreview ?? msg._localFilePreview} mimetype={msg.mimetype} />
                         : isLocation
                         ? <LocationMessage position={msg.position!} isOwn={isOwn} />
                         : (msg.text || "(kein Text)")}

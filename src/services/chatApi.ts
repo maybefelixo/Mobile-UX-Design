@@ -27,11 +27,16 @@ export type ChatMessage = {
   text?: string;
   important?: boolean;
   usernick?: string;
+  userfullname?: string;
   userhash?: string;
   photoid?: string;
+  fileid?: string;
+  filename?: string;
+  mimetype?: string;
   position?: string;
   _status?: "sending" | "error";
   _localPhotoPreview?: string;
+  _localFilePreview?: string;
 };
 
 export type ChatInvite = {
@@ -107,24 +112,28 @@ function normalizeChats(raw: unknown): ChatSummary[] {
 
 function normalizeMessages(raw: unknown): ChatMessage[] {
   if (!Array.isArray(raw)) return [];
-  return raw
-    .map((item) => {
-      if (!item || typeof item !== "object") return null;
-      const data = item as Record<string, unknown>;
-      return {
-        id: data.id ? Number(data.id) : undefined,
-        userid: data.userid ? String(data.userid) : undefined,
-        time: data.time ? String(data.time) : undefined,
-        chatid: data.chatid ? Number(data.chatid) : undefined,
-        text: data.text ? String(data.text) : "",
-        important: Boolean(data.important ?? false),
-        usernick: data.usernick ? String(data.usernick) : undefined,
-        userhash: data.userhash ? String(data.userhash) : undefined,
-        photoid: data.photoid ? String(data.photoid) : undefined,
-        position: data.position ? String(data.position) : undefined,
-      };
-    })
-    .filter((msg): msg is ChatMessage => msg !== null);
+  const result: ChatMessage[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const data = item as Record<string, unknown>;
+    result.push({
+      id: data.id ? Number(data.id) : undefined,
+      userid: data.userid ? String(data.userid) : undefined,
+      time: data.time ? String(data.time) : undefined,
+      chatid: data.chatid ? Number(data.chatid) : undefined,
+      text: data.text ? String(data.text) : "",
+      important: Boolean(data.important ?? false),
+      usernick: data.usernick ? String(data.usernick) : undefined,
+      userfullname: data.userfullname ? String(data.userfullname) : undefined,
+      userhash: data.userhash ? String(data.userhash) : undefined,
+      photoid: data.photoid ? String(data.photoid) : undefined,
+      fileid: data.fileid ? String(data.fileid) : undefined,
+      filename: data.filename ? String(data.filename) : undefined,
+      mimetype: data.mimetype ? String(data.mimetype) : undefined,
+      position: data.position ? String(data.position) : undefined,
+    });
+  }
+  return result;
 }
 
 export async function getChats(token: string): Promise<ApiResult<ChatSummary[]>> {
@@ -157,6 +166,8 @@ export async function postMessage(input: {
   token: string;
   text?: string;
   photo?: string;
+  file?: string;
+  filename?: string;
   position?: string;
   chatid?: number;
   important?: boolean;
@@ -167,6 +178,8 @@ export async function postMessage(input: {
   };
   if (input.text !== undefined) payload.text = input.text;
   if (input.photo !== undefined) payload.photo = input.photo;
+  if (input.file !== undefined) payload.file = input.file;
+  if (input.filename !== undefined) payload.filename = input.filename;
   if (input.position !== undefined) payload.position = input.position;
   if (typeof input.chatid === "number") payload.chatid = input.chatid;
   if (input.important !== undefined) payload.important = input.important;
@@ -189,6 +202,10 @@ export async function getInvites(token: string): Promise<ApiResult<ChatInvite[]>
 
 export async function getPhoto(token: string, photoid: string): Promise<ApiResult<string>> {
   return getBinaryApi({ request: "getphoto", token, photoid });
+}
+
+export async function getFile(token: string, fileid: string): Promise<ApiResult<string>> {
+  return getBinaryApi({ request: "getfile", token, fileid });
 }
 
 export async function createChat(input: {
@@ -236,5 +253,12 @@ export async function leaveChat(token: string, chatid: number): Promise<ApiResul
   return getApi(
     { request: "leavechat", token, chatid: String(chatid) },
     (json) => json.message || "Chat verlassen.",
+  );
+}
+
+export async function rejectInvite(token: string, chatid: number): Promise<ApiResult<string>> {
+  return getApi(
+    { request: "rejectinvite", token, chatid: String(chatid) },
+    (json) => json.message || "Einladung abgelehnt.",
   );
 }

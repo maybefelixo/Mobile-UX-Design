@@ -7,6 +7,7 @@ import {
   getProfiles,
   inviteUser,
   joinChat,
+  rejectInvite,
   type ChatInvite,
   type ChatSummary,
   type UserProfile,
@@ -97,6 +98,7 @@ export default function Profile() {
 
   const [invites, setInvites] = useState<ChatInvite[]>([]);
   const [acceptingId, setAcceptingId] = useState<number | null>(null);
+  const [rejectingId, setRejectingId] = useState<number | null>(null);
   const [inviteError, setInviteError] = useState("");
 
   useEffect(() => {
@@ -204,6 +206,19 @@ export default function Profile() {
     setInvites((prev) => prev.filter((i) => i.chatid !== chatid));
     setAcceptingId(null);
     navigate("/chat", { state: { openChatId: chatid } });
+  }
+
+  async function handleRejectInvite(chatid: number) {
+    setRejectingId(chatid);
+    setInviteError("");
+    const result = await rejectInvite(token, chatid);
+    if (!result.ok) {
+      setInviteError(result.error || "Einladung konnte nicht abgelehnt werden.");
+      setRejectingId(null);
+      return;
+    }
+    setInvites((prev) => prev.filter((i) => i.chatid !== chatid));
+    setRejectingId(null);
   }
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
@@ -508,11 +523,19 @@ export default function Profile() {
                           ) : null}
                         </div>
                       </div>
-                      <div className="flex border-t border-slate-100">
+                      <div className="flex border-t border-slate-100 divide-x divide-slate-100">
+                        <button
+                          type="button"
+                          onClick={() => handleRejectInvite(invite.chatid)}
+                          disabled={acceptingId !== null || rejectingId !== null}
+                          className="flex-1 py-3 text-sm font-semibold text-slate-500 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                        >
+                          {rejectingId === invite.chatid ? "Ablehne…" : "Ablehnen"}
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleAcceptInvite(invite.chatid)}
-                          disabled={acceptingId !== null}
+                          disabled={acceptingId !== null || rejectingId !== null}
                           className="flex-1 py-3 text-sm font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-50 transition-colors"
                         >
                           {acceptingId === invite.chatid ? "Trete bei…" : "Annehmen"}
