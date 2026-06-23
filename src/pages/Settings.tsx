@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { deregisterUser, logoutUser } from "../services/authApi";
-import { getInvites, joinChat, type ChatInvite } from "../services/chatApi";
+import { getInvites, joinChat, rejectInvite, type ChatInvite } from "../services/chatApi";
 import BottomNav from "../components/BottomNav";
 
 export default function Settings() {
@@ -17,6 +17,7 @@ export default function Settings() {
   const [error, setError] = useState("");
   const [invites, setInvites] = useState<ChatInvite[]>([]);
   const [joiningId, setJoiningId] = useState<number | null>(null);
+  const [rejectingId, setRejectingId] = useState<number | null>(null);
   const [hashCopied, setHashCopied] = useState(false);
 
   const displayName = nickname || userid || "?";
@@ -42,6 +43,15 @@ export default function Settings() {
       setInvites((prev) => prev.filter((i) => i.chatid !== chatid));
     }
     setJoiningId(null);
+  }
+
+  async function handleReject(chatid: number) {
+    setRejectingId(chatid);
+    const result = await rejectInvite(token, chatid);
+    if (result.ok) {
+      setInvites((prev) => prev.filter((i) => i.chatid !== chatid));
+    }
+    setRejectingId(null);
   }
 
   async function handleLogout() {
@@ -133,14 +143,24 @@ export default function Settings() {
                     {invite.chatname.slice(0, 2).toUpperCase()}
                   </div>
                   <p className="flex-1 text-sm font-medium text-slate-900">{invite.chatname}</p>
-                  <button
-                    type="button"
-                    onClick={() => handleJoin(invite.chatid)}
-                    disabled={joiningId === invite.chatid}
-                    className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {joiningId === invite.chatid ? "…" : "Beitreten"}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleReject(invite.chatid)}
+                      disabled={joiningId === invite.chatid || rejectingId === invite.chatid}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      {rejectingId === invite.chatid ? "…" : "Ablehnen"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleJoin(invite.chatid)}
+                      disabled={joiningId === invite.chatid || rejectingId === invite.chatid}
+                      className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {joiningId === invite.chatid ? "…" : "Beitreten"}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

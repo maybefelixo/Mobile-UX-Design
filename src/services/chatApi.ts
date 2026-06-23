@@ -11,6 +11,7 @@ export type ChatSummary = {
 export type ChatMessage = {
   id?: number;
   userid?: string;
+  userfullname?: string;
   time?: string;
   chatid?: number;
   text?: string;
@@ -19,6 +20,7 @@ export type ChatMessage = {
   important?: boolean;
   usernick?: string;
   photoid?: string;
+  mimetype?: string;
   localPreview?: string;
   _status?: "sending" | "error";
   _localPhotoPreview?: string;
@@ -107,7 +109,9 @@ function normalizeMessages(raw: unknown): ChatMessage[] {
         replyTo: data.replyto ? Number(data.replyto) : undefined,
         important: Boolean(data.important ?? false),
         usernick: data.usernick ? String(data.usernick) : undefined,
+        userfullname: data.userfullname ? String(data.userfullname) : undefined,
         photoid: data.photoid ? String(data.photoid) : undefined,
+        mimetype: data.mimetype ? String(data.mimetype) : undefined,
       };
     });
 
@@ -152,6 +156,7 @@ export async function postMessage(input: {
   token: string;
   text?: string;
   photo?: string;
+  mimetype?: string;
   position?: string;
   chatid?: number;
   important?: boolean;
@@ -163,6 +168,7 @@ export async function postMessage(input: {
 
   if (input.text !== undefined) payload.text = input.text;
   if (input.photo !== undefined) payload.photo = input.photo;
+  if (input.mimetype !== undefined) payload.mimetype = input.mimetype;
   if (input.position !== undefined) payload.position = input.position;
   if (typeof input.chatid === "number") payload.chatid = input.chatid;
   if (input.important !== undefined) payload.important = input.important;
@@ -233,6 +239,13 @@ export async function leaveChat(token: string, chatid: number): Promise<ApiResul
   return getApi(
     { request: "leavechat", token, chatid: String(chatid) },
     (json) => json.message || "Chat verlassen.",
+  );
+}
+
+export async function rejectInvite(token: string, chatid: number): Promise<ApiResult<string>> {
+  return getApi(
+    { request: "rejectinvite", token, chatid: String(chatid) },
+    (json) => json.message || "Einladung abgelehnt.",
   );
 }
 

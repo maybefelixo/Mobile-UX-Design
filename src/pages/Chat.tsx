@@ -4,6 +4,7 @@ import {
   getChats,
   getMessages,
   getPhoto,
+  postMessage,
   postTextMessage,
   type ChatMessage,
   type ChatSummary,
@@ -229,7 +230,7 @@ function MessageStatus({ status }: { status?: "sending" | "error" }) {
   );
 }
 
-function PhotoMessage({ token, photoid }: { token: string; photoid: string }) {
+function PhotoMessage({ token, photoid, mimetype }: { token: string; photoid: string; mimetype?: string }) {
   const [src, setSrc] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -240,19 +241,25 @@ function PhotoMessage({ token, photoid }: { token: string; photoid: string }) {
     });
   }, [token, photoid]);
 
-  if (failed) return <p className="text-xs opacity-60">Bild nicht verfügbar</p>;
+  if (failed) return <p className="text-xs opacity-60">Datei nicht verfügbar</p>;
   if (!src) return <div className="h-32 w-48 animate-pulse rounded-xl bg-black/10" />;
-  return (
-    <img
-      src={src}
-      alt="Bild"
-      className="max-w-[220px] rounded-xl object-cover shadow-sm"
-    />
-  );
+  const isImage = mimetype ? mimetype.startsWith("image/") : src.startsWith("data:image/");
+  if (!isImage) {
+    const ext = (mimetype ?? "").split("/")[1]?.toUpperCase() ?? "DATEI";
+    return (
+      <a href={src} download className="flex items-center gap-2 rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-700 hover:bg-slate-200">
+        <svg className="h-8 w-8 flex-shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        <span className="font-medium">{ext}-Datei</span>
+      </a>
+    );
+  }
+  return <img src={src} alt="Bild" className="max-w-[220px] rounded-xl object-cover shadow-sm" />;
 }
 
 function ChatDetailView({
-  token, chat, messages, loading, error, onBack, onSendMessage, sending,
+  token, chat, messages, loading, error, onBack, onSendMessage, onSendFile, sending,
 }: {
   token: string;
   chat: ChatSummary | null;
@@ -261,10 +268,12 @@ function ChatDetailView({
   error: string;
   onBack: () => void;
   onSendMessage: (text: string) => Promise<void>;
+  onSendFile: (file: File) => Promise<void>;
   sending: boolean;
 }) {
   const [messageText, setMessageText] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const myUserid = useMemo(() => localStorage.getItem("userid") || "", []);
 
   useEffect(() => {
@@ -276,6 +285,13 @@ function ChatDetailView({
     if (!messageText.trim()) return;
     await onSendMessage(messageText);
     setMessageText("");
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    await onSendFile(file);
   }
 
   const chatName = chat?.chatname || "Chat";
@@ -321,7 +337,7 @@ function ChatDetailView({
         ) : (
           messages.map((msg, i) => {
             const isOwn = (msg.userid || "") === myUserid;
-            const senderName = msg.usernick || msg.userid || "?";
+            const senderName = msg.userfullname || msg.usernick || msg.userid || "?";
             const showDate = i === 0 || (msg.time && messages[i - 1]?.time && !isSameDay(msg.time, messages[i - 1].time!));
 
             return (
@@ -359,7 +375,7 @@ function ChatDetailView({
                       !msg.photoid && !isOwn ? "rounded-bl-sm bg-white text-slate-800" : "",
                     ].join(" ")}>
                       {msg.photoid
-                        ? <PhotoMessage token={token} photoid={msg.photoid} />
+                        ? <PhotoMessage token={token} photoid={msg.photoid} mimetype={msg.mimetype} />
                         : (msg.text || "(kein Text)")}
                     </div>
 
@@ -380,11 +396,12 @@ function ChatDetailView({
 
       {/* Input */}
       <form onSubmit={handleSubmit} className="flex items-center gap-2 bg-white px-3 py-3 shadow-lg">
-        <button type="button" className="flex-shrink-0 text-slate-400 hover:text-slate-600">
+        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending} className="flex-shrink-0 text-slate-400 hover:text-slate-600 disabled:opacity-50">
           <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
           </svg>
         </button>
+        <input ref={fileInputRef} type="file" accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip,application/x-zip-compressed" className="hidden" onChange={handleFileChange} />
         <input
           type="text"
           value={messageText}
@@ -445,15 +462,19 @@ export default function Chat() {
 
   useEffect(() => {
     if (!token || !selectedChat) return;
-    async function loadMessages() {
-      setLoadingMessages(true);
-      if (!selectedChat) { setLoadingMessages(false); return; }
-      const result = await getMessages(token, selectedChat.chatid);
-      setLoadingMessages(false);
+    const chatid = selectedChat.chatid;
+
+    async function loadMessages(initial: boolean) {
+      if (initial) setLoadingMessages(true);
+      const result = await getMessages(token, chatid);
+      if (initial) setLoadingMessages(false);
       if (result.ok && result.data) setMessages(result.data);
-      else setError(result.error || "Nachrichten konnten nicht geladen werden.");
+      else if (initial) setError(result.error || "Nachrichten konnten nicht geladen werden.");
     }
-    void loadMessages();
+
+    void loadMessages(true);
+    const interval = setInterval(() => void loadMessages(false), 3000);
+    return () => clearInterval(interval);
   }, [selectedChat, token]);
 
   async function handleSendMessage(text: string) {
@@ -470,6 +491,23 @@ export default function Chat() {
       return;
     }
 
+    const refreshed = await getMessages(token, selectedChat.chatid);
+    if (refreshed.ok && refreshed.data) setMessages(refreshed.data);
+  }
+
+  async function handleSendFile(file: File) {
+    if (!token || !selectedChat) return;
+    setSending(true);
+    setError("");
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve((reader.result as string).split(",")[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    const result = await postMessage({ token, chatid: selectedChat.chatid, photo: base64, mimetype: file.type || undefined });
+    setSending(false);
+    if (!result.ok) { setError(result.error || "Datei konnte nicht gesendet werden."); return; }
     const refreshed = await getMessages(token, selectedChat.chatid);
     if (refreshed.ok && refreshed.data) setMessages(refreshed.data);
   }
@@ -500,6 +538,7 @@ export default function Chat() {
           error={error}
           onBack={() => setViewMode("list")}
           onSendMessage={handleSendMessage}
+          onSendFile={handleSendFile}
           sending={sending}
         />
       </div>
