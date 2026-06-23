@@ -3,18 +3,21 @@ import { type ChatMessage, type ChatSummary } from "../../services/chatApi";
 import { avatarColor, getInitials } from "../../utils/avatarUtils";
 
 export default function ChatInfoView({
-  chat, messages, onBack, onLeave, onDelete,
+  chat, messages, onBack, onLeave, onDelete, onRemoveMember,
 }: {
   chat: ChatSummary;
   messages: ChatMessage[];
   onBack: () => void;
   onLeave: () => Promise<string | null>;
   onDelete: () => Promise<string | null>;
+  onRemoveMember?: (userid: string) => Promise<void>;
 }) {
   const [leaving, setLeaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const myUserid = useMemo(() => localStorage.getItem("userid") || "", []);
 
   const isGroup = chat.visibility === "public";
   const isOwner = chat.role === "owner" || chat.role === "admin";
@@ -92,6 +95,27 @@ export default function ChatInfoView({
                       {getInitials(m.usernick)}
                     </div>
                     <p className="flex-1 text-sm font-medium text-slate-900">{m.usernick}</p>
+                    {isOwner && onRemoveMember && m.userid !== myUserid ? (
+                      <button
+                        type="button"
+                        disabled={removingId === m.userid}
+                        onClick={async () => {
+                          setRemovingId(m.userid);
+                          await onRemoveMember(m.userid);
+                          setRemovingId(null);
+                        }}
+                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-50"
+                        title="Mitglied entfernen"
+                      >
+                        {removingId === m.userid ? (
+                          <span className="text-xs">…</span>
+                        ) : (
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        )}
+                      </button>
+                    ) : null}
                   </div>
                 ))
               )}

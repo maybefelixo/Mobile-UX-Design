@@ -29,11 +29,13 @@ export type ChatMessage = {
 export type UserProfile = {
   hash: string;
   nickname: string;
+  fullname: string;
 };
 
 export type ChatInvite = {
   chatid: number;
   chatname: string;
+  owner: { nickname: string; fullname: string } | null;
 };
 
 function normalizeProfiles(raw: unknown): UserProfile[] {
@@ -45,6 +47,7 @@ function normalizeProfiles(raw: unknown): UserProfile[] {
       return {
         hash: String(data.hash ?? ""),
         nickname: String(data.nickname ?? ""),
+        fullname: String(data.fullname ?? ""),
       };
     })
     .filter((p): p is UserProfile => p !== null);
@@ -56,9 +59,18 @@ function normalizeInvites(raw: unknown): ChatInvite[] {
     .map((item) => {
       if (!item || typeof item !== "object") return null;
       const data = item as Record<string, unknown>;
+      let owner: { nickname: string; fullname: string } | null = null;
+      if (data.owner && typeof data.owner === "object") {
+        const ownerData = data.owner as Record<string, unknown>;
+        owner = {
+          nickname: String(ownerData.nickname ?? ""),
+          fullname: String(ownerData.fullname ?? ""),
+        };
+      }
       return {
         chatid: Number(data.chatid ?? 0),
         chatname: String(data.chatname ?? ""),
+        owner,
       };
     })
     .filter((i): i is ChatInvite => i !== null);
@@ -160,6 +172,7 @@ export async function postMessage(input: {
   position?: string;
   chatid?: number;
   important?: boolean;
+  replyto?: number;
 }): Promise<ApiResult<string>> {
   const payload: Record<string, string | boolean | number> = {
     request: "postmessage",
@@ -172,6 +185,7 @@ export async function postMessage(input: {
   if (input.position !== undefined) payload.position = input.position;
   if (typeof input.chatid === "number") payload.chatid = input.chatid;
   if (input.important !== undefined) payload.important = input.important;
+  if (typeof input.replyto === "number") payload.replyto = input.replyto;
 
   return postApi(payload, (json) => json.message || "Nachricht gesendet.");
 }
@@ -253,5 +267,16 @@ export async function deleteMessage(token: string, messageid: number): Promise<A
   return getApi(
     { request: "deletemessage", token, messageid: String(messageid) },
     (json) => json.message || "Nachricht gelöscht.",
+  );
+}
+
+export async function removeFromChat(
+  token: string,
+  chatid: number,
+  userhash: string,
+): Promise<ApiResult<string>> {
+  return getApi(
+    { request: "removefromchat", token, chatid: String(chatid), userhash },
+    (json) => json.message || "Mitglied entfernt.",
   );
 }
