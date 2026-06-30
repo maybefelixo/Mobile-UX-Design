@@ -10,3 +10,45 @@ body {
   margin: 0;
   font-family: Arial, sans-serif;
 }
+
+/* ── Dark mode overrides ─────────────────────────────────────────────────────
+   Applied when .dark is on <html>. Overrides Tailwind slate/white utilities
+   without touching individual components.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+.dark .bg-white        { background-color: #1e293b; }
+.dark .bg-slate-50     { background-color: #0f172a; }
+.dark .bg-slate-100    { background-color: #293548; }
+.dark .bg-slate-200    { background-color: #334155; }
+
+.dark .text-slate-900  { color: #f1f5f9; }
+.dark .text-slate-800  { color: #e2e8f0; }
+.dark .text-slate-700  { color: #cbd5e1; }
+.dark .text-slate-600  { color: #94a3b8; }
+.dark .text-slate-500  { color: #94a3b8; }
+.dark .text-slate-400  { color: #64748b; }
+
+.dark .border-slate-100 { border-color: #334155; }
+.dark .border-slate-200 { border-color: #475569; }
+.dark .border-slate-300 { border-color: #64748b; }
+
+.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color: #334155; }
+.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: #475569; }
+
+.dark .hover\:bg-slate-50:hover  { background-color: #293548; }
+.dark .hover\:bg-slate-100:hover { background-color: #334155; }
+.dark .hover\:bg-slate-200:hover { background-color: #475569; }
+
+.dark .active\:bg-slate-100:active { background-color: #334155; }
+
+.dark input,
+.dark textarea {
+  background-color: #293548;
+  color: #f1f5f9;
+}
+
+.dark .bg-red-50  { background-color: #2d1a1a; }
+.dark .text-red-600 { color: #f87171; }
+.dark .text-red-700 { color: #fca5a5; }
+.dark .border-red-200 { border-color: #7f1d1d; }
+.dark .hover\:bg-red-100:hover { background-color: #3f1f1f; }

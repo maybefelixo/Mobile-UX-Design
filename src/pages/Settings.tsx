@@ -10,9 +10,17 @@ export default function Settings() {
   const nickname = localStorage.getItem("nickname") || "";
   const fullname = localStorage.getItem("fullname") || "";
 
+  const [darkMode, setDarkMode] = useState(localStorage.getItem("darkMode") === "true");
   const [loading, setLoading] = useState(false);
   const [confirmDeregister, setConfirmDeregister] = useState(false);
   const [error, setError] = useState("");
+
+  function toggleDarkMode() {
+    const next = !darkMode;
+    setDarkMode(next);
+    localStorage.setItem("darkMode", String(next));
+    document.documentElement.classList.toggle("dark", next);
+  }
 
   const displayName = nickname || userid || "?";
   const initials = displayName.slice(0, 2).toUpperCase();
@@ -76,6 +84,25 @@ export default function Settings() {
               <p className="mt-0.5 text-sm font-medium text-slate-900">{fullname}</p>
             </div>
           ) : null}
+        </div>
+
+        {/* Dark mode toggle */}
+        <div className="divide-y divide-slate-100 rounded-2xl bg-white shadow-sm">
+          <button
+            type="button"
+            onClick={toggleDarkMode}
+            className="flex w-full items-center justify-between px-4 py-3"
+          >
+            <div className="flex items-center gap-3">
+              <svg className="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+              </svg>
+              <span className="text-sm font-medium text-slate-900">Dark Mode</span>
+            </div>
+            <div className={["relative h-6 w-11 flex-shrink-0 rounded-full transition-colors duration-200", darkMode ? "bg-blue-600" : "bg-slate-200"].join(" ")}>
+              <div className={["absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform duration-200", darkMode ? "translate-x-5" : "translate-x-0.5"].join(" ")} />
+            </div>
+          </button>
         </div>
 
         {error ? <p className="text-center text-sm text-red-600">{error}</p> : null}
