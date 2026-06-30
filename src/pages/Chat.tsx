@@ -13,11 +13,11 @@ import BottomNav from "../components/BottomNav";
 import ChatListView, { type FilterType } from "../components/chat/ChatListView";
 import ChatDetailView from "../components/chat/ChatDetailView";
 import ChatInfoView from "../components/chat/ChatInfoView";
-import { toPngDataUrl } from "../utils/imageUtils";
+import { toBase64, toPngDataUrl } from "../utils/imageUtils";
 
 type ViewMode = "list" | "detail" | "info";
 
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 2000;
 const CHAT_LIST_POLL_MS = 15000;
 
 export default function Chat() {
@@ -40,7 +40,6 @@ export default function Chat() {
   const [filterType, setFilterType] = useState<FilterType>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
 
-  const lastServerIdRef = useRef<number>(-1);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   function handleSessionExpired() {
@@ -84,8 +83,6 @@ export default function Chat() {
       clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
-    lastServerIdRef.current = -1;
-
     const chatid = selectedChat.chatid;
 
     async function loadInitial() {
@@ -94,8 +91,6 @@ export default function Chat() {
       setLoadingMessages(false);
       if (result.ok && result.data) {
         setMessages(result.data);
-        const ids = result.data.filter((m) => m.id !== undefined).map((m) => m.id!);
-        lastServerIdRef.current = ids.length > 0 ? Math.max(...ids) : 0;
       } else if (result.invalidToken) {
         handleSessionExpired();
       } else {
@@ -106,20 +101,11 @@ export default function Chat() {
     void loadInitial();
 
     pollingRef.current = setInterval(async () => {
-      if (lastServerIdRef.current < 0) return;
-      const result = await getMessages(token, chatid, lastServerIdRef.current + 1);
-      if (result.ok && result.data && result.data.length > 0) {
+      const result = await getMessages(token, chatid);
+      if (result.ok && result.data) {
         setMessages((prev) => {
-          const existingIds = new Set(
-            prev.map((m) => m.id).filter((id): id is number => id !== undefined),
-          );
-          const toAdd = result.data!.filter(
-            (m) => m.id !== undefined && !existingIds.has(m.id!),
-          );
-          if (toAdd.length === 0) return prev;
-          const maxId = Math.max(...toAdd.map((m) => m.id!));
-          lastServerIdRef.current = Math.max(lastServerIdRef.current, maxId);
-          return [...prev, ...toAdd];
+          const optimistic = prev.filter((m) => m._status !== undefined);
+          return [...result.data!, ...optimistic];
         });
       } else if (result.invalidToken) {
         handleSessionExpired();
@@ -133,11 +119,6 @@ export default function Chat() {
       }
     };
   }, [selectedChat?.chatid, token]);
-
-  function updateLastServerId(msgs: ChatMessage[]) {
-    const ids = msgs.filter((m) => m.id !== undefined).map((m) => m.id!);
-    if (ids.length > 0) lastServerIdRef.current = Math.max(...ids);
-  }
 
   async function handleLeaveChat(): Promise<string | null> {
     if (!token || !selectedChat) return null;
@@ -188,46 +169,72 @@ export default function Chat() {
       setError(result.error || "Nachricht konnte nicht gesendet werden.");
       return;
     }
-    const refreshed = await getMessages(token, selectedChat.chatid);
-    if (refreshed.ok && refreshed.data) {
-      setMessages(refreshed.data);
-      updateLastServerId(refreshed.data);
-    }
+    setMessages((prev) =>
+      prev.map((m) => m.id === tempId ? { ...m, _status: undefined } : m),
+    );
   }
 
   async function handleSendPhoto(file: File) {
     if (!token || !selectedChat) return;
-    let dataUrl: string;
-    try { dataUrl = await toPngDataUrl(file); }
-    catch { setError("Bild konnte nicht verarbeitet werden."); return; }
+    const isImage = file.type.startsWith("image/");
     const tempId = Date.now();
-    const optimistic: ChatMessage = {
-      id: tempId,
-      userid: localStorage.getItem("userid") || "",
-      usernick: localStorage.getItem("nickname") || undefined,
-      time: new Date().toISOString(),
-      chatid: selectedChat.chatid,
-      _status: "sending",
-      _localPhotoPreview: dataUrl,
-    };
-    setMessages((prev) => [...prev, optimistic]);
     setSending(true);
     setError("");
-    const base64 = dataUrl.replace(/^data:image\/png;base64,/, "");
-    const result = await postMessage({ token, photo: base64, chatid: selectedChat.chatid });
-    setSending(false);
-    if (!result.ok) {
-      setMessages((prev) =>
-        prev.map((m) => m.id === tempId ? { ...m, _status: "error" as const } : m),
-      );
-      setError(result.error || "Foto konnte nicht gesendet werden.");
-      return;
+
+    if (isImage) {
+      let dataUrl: string;
+      try { dataUrl = await toPngDataUrl(file); }
+      catch { setError("Bild konnte nicht verarbeitet werden."); setSending(false); return; }
+      const optimistic: ChatMessage = {
+        id: tempId,
+        userid: localStorage.getItem("userid") || "",
+        usernick: localStorage.getItem("nickname") || undefined,
+        time: new Date().toISOString(),
+        chatid: selectedChat.chatid,
+        _status: "sending",
+        _localPhotoPreview: dataUrl,
+      };
+      setMessages((prev) => [...prev, optimistic]);
+      const base64 = dataUrl.replace(/^data:image\/png;base64,/, "");
+      const result = await postMessage({ token, photo: base64, chatid: selectedChat.chatid });
+      setSending(false);
+      if (!result.ok) {
+        setMessages((prev) =>
+          prev.map((m) => m.id === tempId ? { ...m, _status: "error" as const } : m),
+        );
+        setError(result.error || "Foto konnte nicht gesendet werden.");
+        return;
+      }
+    } else {
+      let base64: string;
+      try { base64 = await toBase64(file); }
+      catch { setError("Datei konnte nicht verarbeitet werden."); setSending(false); return; }
+      const optimistic: ChatMessage = {
+        id: tempId,
+        userid: localStorage.getItem("userid") || "",
+        usernick: localStorage.getItem("nickname") || undefined,
+        time: new Date().toISOString(),
+        chatid: selectedChat.chatid,
+        filename: file.name,
+        mimetype: file.type,
+        _status: "sending",
+        _localFilePreview: `data:${file.type};base64,${base64}`,
+      };
+      setMessages((prev) => [...prev, optimistic]);
+      const result = await postMessage({ token, file: base64, filename: file.name, mimetype: file.type, chatid: selectedChat.chatid });
+      setSending(false);
+      if (!result.ok) {
+        setMessages((prev) =>
+          prev.map((m) => m.id === tempId ? { ...m, _status: "error" as const } : m),
+        );
+        setError(result.error || "Datei konnte nicht gesendet werden.");
+        return;
+      }
     }
-    const refreshed = await getMessages(token, selectedChat.chatid);
-    if (refreshed.ok && refreshed.data) {
-      setMessages(refreshed.data);
-      updateLastServerId(refreshed.data);
-    }
+
+    setMessages((prev) =>
+      prev.map((m) => m.id === tempId ? { ...m, _status: undefined } : m),
+    );
   }
 
   async function handleSendLocation() {
@@ -258,11 +265,9 @@ export default function Chat() {
           setError(result.error || "Standort konnte nicht gesendet werden.");
           return;
         }
-        const refreshed = await getMessages(token, selectedChat.chatid);
-        if (refreshed.ok && refreshed.data) {
-          setMessages(refreshed.data);
-          updateLastServerId(refreshed.data);
-        }
+        setMessages((prev) =>
+          prev.map((m) => m.id === tempId ? { ...m, _status: undefined } : m),
+        );
       },
       () => setError("Standort konnte nicht ermittelt werden."),
     );

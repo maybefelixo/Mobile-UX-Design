@@ -59,3 +59,14 @@ export async function logoutUser(token: string): Promise<ApiResult<string>> {
   );
 }
 
+export async function editProfile(
+  token: string,
+  input: { nickname?: string; fullname?: string; password?: string },
+): Promise<ApiResult<string>> {
+  const params: Record<string, string> = { request: "editprofile", token };
+  if (input.nickname !== undefined) params.nickname = input.nickname;
+  if (input.fullname !== undefined) params.fullname = input.fullname;
+  if (input.password !== undefined) params.password = input.password;
+  return getApi(params, (json) => json.message || "Profil aktualisiert.");
+}
+

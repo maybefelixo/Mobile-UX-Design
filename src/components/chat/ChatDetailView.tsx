@@ -95,9 +95,9 @@ export default function ChatDetailView({
         ) : (
           messages.map((msg, i) => {
             const isOwn = (msg.userid || "") === myUserid;
-            const senderName = msg.usernick || msg.userid || "?";
+            const senderName = msg.userfullname || msg.usernick || msg.userid || "?";
             const showDate = i === 0 || (msg.time && messages[i - 1]?.time && !isSameDay(msg.time, messages[i - 1].time!));
-            const isPhoto = !!(msg.photoid || msg._localPhotoPreview);
+            const isPhoto = !!(msg.photoid || msg.fileid || msg._localPhotoPreview || msg._localFilePreview);
             const isLocation = !!msg.position && !isPhoto;
 
             return (
@@ -132,7 +132,7 @@ export default function ChatDetailView({
                       msg.important ? "ring-[3px] ring-red-500" : "",
                     ].join(" ")}>
                       {isPhoto
-                        ? <PhotoMessage token={token} photoid={msg.photoid} localPreview={msg._localPhotoPreview} />
+                        ? <PhotoMessage token={token} photoid={msg.photoid} fileid={msg.fileid} filename={msg.filename} localPreview={msg._localPhotoPreview ?? msg._localFilePreview} mimetype={msg.mimetype} />
                         : isLocation
                         ? <LocationMessage position={msg.position!} isOwn={isOwn} />
                         : (msg.text || "(kein Text)")}
@@ -167,10 +167,10 @@ export default function ChatDetailView({
           <button type="button" onClick={() => { fileInputRef.current?.click(); setMediaOpen(false); }} disabled={sending} className="flex flex-col items-center gap-1.5 disabled:opacity-50">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-green-100">
               <svg className="h-7 w-7 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
               </svg>
             </div>
-            <span className="text-xs font-medium text-slate-600">Foto</span>
+            <span className="text-xs font-medium text-slate-600">Datei</span>
           </button>
           <button type="button" onClick={() => { cameraInputRef.current?.click(); setMediaOpen(false); }} disabled={sending} className="flex flex-col items-center gap-1.5 disabled:opacity-50">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-rose-100">
@@ -184,7 +184,7 @@ export default function ChatDetailView({
         </div>
       )}
 
-      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+      <input ref={fileInputRef} type="file" accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip,application/x-zip-compressed" className="hidden" onChange={handleFileChange} />
       <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileChange} />
 
       {/* Input bar */}
