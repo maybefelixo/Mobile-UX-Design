@@ -8,7 +8,7 @@ import PhotoMessage from "./PhotoMessage";
 
 export default function ChatDetailView({
   token, chat, messages, loading, error, onBack, onShowInfo,
-  onSendMessage, onSendPhoto, onSendLocation, sending,
+  onSendMessage, onSendPhoto, onSendFile, onSendLocation, sending,
 }: {
   token: string;
   chat: ChatSummary | null;
@@ -19,6 +19,7 @@ export default function ChatDetailView({
   onShowInfo: () => void;
   onSendMessage: (text: string, important: boolean) => Promise<void>;
   onSendPhoto: (file: File) => Promise<void>;
+  onSendFile: (file: File) => Promise<void>;
   onSendLocation: () => Promise<void>;
   sending: boolean;
 }) {
@@ -26,12 +27,34 @@ export default function ChatDetailView({
   const [mediaOpen, setMediaOpen] = useState(false);
   const [important, setImportant] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const prevLengthRef = useRef(0);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const myUserid = useMemo(() => localStorage.getItem("userid") || "", []);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const prev = prevLengthRef.current;
+    const curr = messages.length;
+    prevLengthRef.current = curr;
+
+    if (prev === 0 && curr > 0) {
+      // initial load — jump to bottom instantly
+      container.scrollTop = container.scrollHeight;
+      return;
+    }
+
+    if (curr > prev) {
+      // new messages arrived — only pull down if already near the bottom
+      const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      if (distanceFromBottom < 150) {
+        bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      }
+    }
   }, [messages]);
 
   async function handleSubmit(e: { preventDefault(): void }) {
@@ -42,12 +65,20 @@ export default function ChatDetailView({
     setImportant(false);
   }
 
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
     setMediaOpen(false);
     await onSendPhoto(file);
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setMediaOpen(false);
+    await onSendFile(file);
   }
 
   async function handleLocationPick() {
@@ -83,7 +114,7 @@ export default function ChatDetailView({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <p className="text-sm text-slate-400">Laden …</p>
@@ -155,7 +186,32 @@ export default function ChatDetailView({
 
       {/* Media picker */}
       {mediaOpen && (
-        <div className="flex gap-6 border-t border-slate-100 bg-white px-6 py-4">
+        <div className="flex gap-4 border-t border-slate-100 bg-white px-6 py-4">
+          <button type="button" onClick={() => { imageInputRef.current?.click(); setMediaOpen(false); }} disabled={sending} className="flex flex-col items-center gap-1.5 disabled:opacity-50">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-purple-100">
+              <svg className="h-7 w-7 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <span className="text-xs font-medium text-slate-600">Foto</span>
+          </button>
+          <button type="button" onClick={() => { cameraInputRef.current?.click(); setMediaOpen(false); }} disabled={sending} className="flex flex-col items-center gap-1.5 disabled:opacity-50">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-rose-100">
+              <svg className="h-7 w-7 text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </div>
+            <span className="text-xs font-medium text-slate-600">Kamera</span>
+          </button>
+          <button type="button" onClick={() => { fileInputRef.current?.click(); setMediaOpen(false); }} disabled={sending} className="flex flex-col items-center gap-1.5 disabled:opacity-50">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-green-100">
+              <svg className="h-7 w-7 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+              </svg>
+            </div>
+            <span className="text-xs font-medium text-slate-600">Datei</span>
+          </button>
           <button type="button" onClick={handleLocationPick} disabled={sending} className="flex flex-col items-center gap-1.5 disabled:opacity-50">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-100">
               <svg className="h-7 w-7 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
@@ -164,28 +220,15 @@ export default function ChatDetailView({
             </div>
             <span className="text-xs font-medium text-slate-600">Standort</span>
           </button>
-          <button type="button" onClick={() => { fileInputRef.current?.click(); setMediaOpen(false); }} disabled={sending} className="flex flex-col items-center gap-1.5 disabled:opacity-50">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-green-100">
-              <svg className="h-7 w-7 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-              </svg>
-            </div>
-            <span className="text-xs font-medium text-slate-600">Datei</span>
-          </button>
-          <button type="button" onClick={() => { cameraInputRef.current?.click(); setMediaOpen(false); }} disabled={sending} className="flex flex-col items-center gap-1.5 disabled:opacity-50">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-rose-100">
-              <svg className="h-7 w-7 text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </div>
-            <span className="text-xs font-medium text-slate-600">Kamera</span>
-          </button>
         </div>
       )}
 
-      <input ref={fileInputRef} type="file" accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip,application/x-zip-compressed" className="hidden" onChange={handleFileChange} />
-      <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileChange} />
+      {/* image from gallery → PNG → photo */}
+      <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+      {/* camera capture → PNG → photo */}
+      <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImageChange} />
+      {/* any file → raw base64 + MIME type → file */}
+      <input ref={fileInputRef} type="file" accept=".jpg,.jpeg,.gif,.webp,.png,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.7z,.txt,.csv" className="hidden" onChange={handleFileChange} />
 
       {/* Input bar */}
       <form onSubmit={handleSubmit} className="flex items-center gap-2 bg-white px-3 py-3 shadow-lg">

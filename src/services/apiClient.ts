@@ -1,4 +1,4 @@
-const API_BASE = "https://www2.hs-esslingen.de/~nitzsche/api/";
+export const API_BASE = "https://www2.hs-esslingen.de/~nitzsche/api/";
 
 type ApiStatus = "ok" | "error";
 
@@ -81,7 +81,13 @@ export async function getBinaryApi(
     }
 
     const blob = await response.blob();
-    return { ok: true, data: URL.createObjectURL(blob) };
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error("Lesen fehlgeschlagen"));
+      reader.readAsDataURL(blob);
+    });
+    return { ok: true, data: dataUrl };
   } catch {
     return { ok: false, error: "Netzwerkfehler" };
   }

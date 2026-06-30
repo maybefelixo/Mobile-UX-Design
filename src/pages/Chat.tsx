@@ -14,6 +14,13 @@ import ChatListView, { type FilterType } from "../components/chat/ChatListView";
 import ChatDetailView from "../components/chat/ChatDetailView";
 import ChatInfoView from "../components/chat/ChatInfoView";
 import { toBase64, toPngDataUrl } from "../utils/imageUtils";
+import {
+  addToOutbox,
+  getChatsOffline,
+  getMessagesOffline,
+  saveChatsOffline,
+  saveMessagesOffline,
+} from "../utils/db";
 
 type ViewMode = "list" | "detail" | "info";
 
@@ -40,7 +47,19 @@ export default function Chat() {
   const [filterType, setFilterType] = useState<FilterType>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
 
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    function goOnline() { setIsOffline(false); }
+    function goOffline() { setIsOffline(true); }
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
 
   function handleSessionExpired() {
     localStorage.clear();
@@ -55,10 +74,13 @@ export default function Chat() {
       setLoadingChats(false);
       if (result.ok && result.data) {
         setChats(result.data);
+        void saveChatsOffline(result.data);
       } else if (result.invalidToken) {
         handleSessionExpired();
       } else {
-        setError(result.error || "Chats konnten nicht geladen werden.");
+        const offline = await getChatsOffline();
+        if (offline.length > 0) setChats(offline as typeof chats);
+        else setError(result.error || "Chats konnten nicht geladen werden.");
       }
     }
     void loadChats();
@@ -91,10 +113,13 @@ export default function Chat() {
       setLoadingMessages(false);
       if (result.ok && result.data) {
         setMessages(result.data);
+        void saveMessagesOffline(chatid, result.data);
       } else if (result.invalidToken) {
         handleSessionExpired();
       } else {
-        setError(result.error || "Nachrichten konnten nicht geladen werden.");
+        const offline = await getMessagesOffline(chatid);
+        if (offline.length > 0) setMessages(offline as ChatMessage[]);
+        else setError(result.error || "Nachrichten konnten nicht geladen werden.");
       }
     }
 
@@ -160,6 +185,22 @@ export default function Chat() {
     setMessages((prev) => [...prev, optimistic]);
     setSending(true);
     setError("");
+
+    if (!navigator.onLine) {
+      await addToOutbox({ token, chatid: selectedChat.chatid, text, important });
+      if ("serviceWorker" in navigator && navigator.serviceWorker.ready) {
+        navigator.serviceWorker.ready
+          .then((reg) => (reg as ServiceWorkerRegistration & { sync?: { register(tag: string): Promise<void> } }).sync?.register("sync-messages"))
+          .catch(() => {});
+      }
+      setSending(false);
+      setMessages((prev) =>
+        prev.map((m) => m.id === tempId ? { ...m, _status: "error" as const } : m),
+      );
+      setError("Offline – Nachricht wird gesendet sobald du wieder online bist.");
+      return;
+    }
+
     const result = await postMessage({ token, text, chatid: selectedChat.chatid, important });
     setSending(false);
     if (!result.ok) {
@@ -237,6 +278,43 @@ export default function Chat() {
     );
   }
 
+  async function handleSendFile(file: File) {
+    if (!token || !selectedChat) return;
+    const tempId = Date.now();
+    setSending(true);
+    setError("");
+    let base64: string;
+    try { base64 = await toBase64(file); }
+    catch { setError("Datei konnte nicht verarbeitet werden."); setSending(false); return; }
+    const isImg = file.type.startsWith("image/");
+    const optimistic: ChatMessage = {
+      id: tempId,
+      userid: localStorage.getItem("userid") || "",
+      usernick: localStorage.getItem("nickname") || undefined,
+      time: new Date().toISOString(),
+      chatid: selectedChat.chatid,
+      filename: file.name,
+      mimetype: file.type,
+      _status: "sending",
+      ...(isImg
+        ? { _localPhotoPreview: `data:${file.type};base64,${base64}` }
+        : { _localFilePreview: `data:${file.type};base64,${base64}` }),
+    };
+    setMessages((prev) => [...prev, optimistic]);
+    const result = await postMessage({ token, file: base64, filename: file.name, mimetype: file.type, chatid: selectedChat.chatid });
+    setSending(false);
+    if (!result.ok) {
+      setMessages((prev) =>
+        prev.map((m) => m.id === tempId ? { ...m, _status: "error" as const } : m),
+      );
+      setError(result.error || "Datei konnte nicht gesendet werden.");
+      return;
+    }
+    setMessages((prev) =>
+      prev.map((m) => m.id === tempId ? { ...m, _status: undefined } : m),
+    );
+  }
+
   async function handleSendLocation() {
     if (!token || !selectedChat) return;
     if (!navigator.geolocation) { setError("GPS nicht verfügbar."); return; }
@@ -296,6 +374,14 @@ export default function Chat() {
 
   return (
     <div className="flex h-screen flex-col bg-white lg:grid lg:grid-cols-[360px_1fr]">
+      {isOffline && (
+        <div className="col-span-2 flex items-center justify-center gap-2 bg-amber-500 px-4 py-2 text-xs font-semibold text-white">
+          <svg className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 5.636a9 9 0 010 12.728M15.536 8.464a5 5 0 010 7.072M12 12h.01M8.464 8.464a5 5 0 000 7.072M5.636 5.636a9 9 0 000 12.728" />
+          </svg>
+          Offline – Nachrichten werden synchronisiert sobald du wieder online bist
+        </div>
+      )}
       <div className={viewMode === "list" ? "flex h-screen flex-col" : "hidden lg:flex lg:h-screen lg:flex-col"}>
         <ChatListView
           chats={chats.filter((c) => c.joined)}
@@ -323,6 +409,7 @@ export default function Chat() {
             onShowInfo={() => setViewMode("info")}
             onSendMessage={handleSendMessage}
             onSendPhoto={handleSendPhoto}
+            onSendFile={handleSendFile}
             onSendLocation={handleSendLocation}
             sending={sending}
           />
