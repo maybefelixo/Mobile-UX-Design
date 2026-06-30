@@ -13,6 +13,7 @@ type ApiEnvelope = {
   profiles?: unknown;
   invites?: unknown;
   chatid?: number;
+  fileid?: string;
 };
 
 export type ApiResult<T> = {
@@ -44,7 +45,7 @@ export async function getApi<T>(
       url.searchParams.set(key, value);
     });
 
-    const response = await fetch(url.toString(), { method: "GET" });
+    const response = await fetch(url.toString(), { method: "GET", cache: "no-store" });
     const json = await parseJson(response);
 
     if (!response.ok || json?.status !== "ok") {
@@ -70,7 +71,7 @@ export async function getBinaryApi(
       url.searchParams.set(key, value);
     });
 
-    const response = await fetch(url.toString(), { method: "GET" });
+    const response = await fetch(url.toString(), { method: "GET", cache: "no-store" });
     if (!response.ok) {
       return {
         ok: false,
@@ -94,6 +95,7 @@ export async function postApi<T>(
     const response = await fetch(API_BASE, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      cache: "no-store",
       body: JSON.stringify(body),
     });
 

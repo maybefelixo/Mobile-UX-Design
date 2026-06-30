@@ -168,6 +168,7 @@ export async function postMessage(input: {
   photo?: string;
   file?: string;
   filename?: string;
+  mimetype?: string;
   position?: string;
   chatid?: number;
   important?: boolean;
@@ -180,6 +181,7 @@ export async function postMessage(input: {
   if (input.photo !== undefined) payload.photo = input.photo;
   if (input.file !== undefined) payload.file = input.file;
   if (input.filename !== undefined) payload.filename = input.filename;
+  if (input.mimetype !== undefined) payload.mimetype = input.mimetype;
   if (input.position !== undefined) payload.position = input.position;
   if (typeof input.chatid === "number") payload.chatid = input.chatid;
   if (input.important !== undefined) payload.important = input.important;

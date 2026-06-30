@@ -40,7 +40,6 @@ export default function Chat() {
   const [filterType, setFilterType] = useState<FilterType>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
 
-  const lastServerIdRef = useRef<number>(-1);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   function handleSessionExpired() {
@@ -84,8 +83,6 @@ export default function Chat() {
       clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
-    lastServerIdRef.current = -1;
-
     const chatid = selectedChat.chatid;
 
     async function loadInitial() {
@@ -94,8 +91,6 @@ export default function Chat() {
       setLoadingMessages(false);
       if (result.ok && result.data) {
         setMessages(result.data);
-        const ids = result.data.filter((m) => m.id !== undefined).map((m) => m.id!);
-        lastServerIdRef.current = ids.length > 0 ? Math.max(...ids) : 0;
       } else if (result.invalidToken) {
         handleSessionExpired();
       } else {
@@ -106,20 +101,11 @@ export default function Chat() {
     void loadInitial();
 
     pollingRef.current = setInterval(async () => {
-      if (lastServerIdRef.current < 0) return;
-      const result = await getMessages(token, chatid, lastServerIdRef.current + 1);
-      if (result.ok && result.data && result.data.length > 0) {
+      const result = await getMessages(token, chatid);
+      if (result.ok && result.data) {
         setMessages((prev) => {
-          const existingIds = new Set(
-            prev.map((m) => m.id).filter((id): id is number => id !== undefined),
-          );
-          const toAdd = result.data!.filter(
-            (m) => m.id !== undefined && !existingIds.has(m.id!),
-          );
-          if (toAdd.length === 0) return prev;
-          const maxId = Math.max(...toAdd.map((m) => m.id!));
-          lastServerIdRef.current = Math.max(lastServerIdRef.current, maxId);
-          return [...prev, ...toAdd];
+          const optimistic = prev.filter((m) => m._status !== undefined);
+          return [...result.data!, ...optimistic];
         });
       } else if (result.invalidToken) {
         handleSessionExpired();
@@ -235,7 +221,7 @@ export default function Chat() {
         _localFilePreview: `data:${file.type};base64,${base64}`,
       };
       setMessages((prev) => [...prev, optimistic]);
-      const result = await postMessage({ token, file: base64, filename: file.name, chatid: selectedChat.chatid });
+      const result = await postMessage({ token, file: base64, filename: file.name, mimetype: file.type, chatid: selectedChat.chatid });
       setSending(false);
       if (!result.ok) {
         setMessages((prev) =>
