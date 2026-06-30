@@ -508,19 +508,17 @@ export default function Profile() {
                       <div className="flex items-center gap-3 px-4 py-4">
                         <div className={[
                           "flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full text-base font-semibold text-white",
-                          avatarColor(invite.chatname),
+                          avatarColor(invite.owner?.nickname ?? invite.chatname),
                         ].join(" ")}>
-                          {getInitials(invite.chatname)}
+                          {getInitials(invite.owner?.nickname ?? invite.chatname)}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-slate-900">{invite.chatname}</p>
-                          {invite.owner ? (
-                            <p className="text-xs text-slate-400 mt-0.5">
-                              Eingeladen von{" "}
-                              <span className="font-medium text-slate-600">{invite.owner.nickname}</span>
-                              {invite.owner.fullname ? ` (${invite.owner.fullname})` : ""}
-                            </p>
-                          ) : null}
+                          <p className="text-sm font-semibold text-slate-900">
+                            {invite.owner ? invite.owner.nickname : invite.chatname}
+                          </p>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            lädt dich ein zu „{invite.chatname}"
+                          </p>
                         </div>
                       </div>
                       <div className="flex border-t border-slate-100 divide-x divide-slate-100">
